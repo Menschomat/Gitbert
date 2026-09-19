@@ -11,7 +11,7 @@ Built with **Google Agent Development Kit (ADK) 2.0** â€¢ Managed with **uv** â€
 [![Gitea Actions CI/CD](https://img.shields.io/badge/CI%2FCD-Gitea_Actions-609926?logo=gitea&logoColor=white)](https://about.gitea.com/)
 [![Docker](https://img.shields.io/badge/Docker-Multi--stage_3.14-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Code Style](https://img.shields.io/badge/code%20style-Ruff-black?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
-[![Tests](https://img.shields.io/badge/tests-39%20passed-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-42%20passed-success)](tests/)
 
 </div>
 

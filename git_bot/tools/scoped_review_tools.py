@@ -11,6 +11,7 @@ from typing import Any
 
 from git_bot.platforms.base import ICodePlatform
 from git_bot.security.context import ScopedMRContext
+from git_bot.security.exceptions import SecurityScopeViolationError
 
 
 def create_scoped_tools(
@@ -65,4 +66,38 @@ def create_scoped_tools(
             "allowed_files": sorted(context.allowed_files),
         }
 
-    return [get_pr_diff, get_file_content, get_pr_metadata]
+    async def list_repository_files(
+        directory: str = "",
+    ) -> list[dict[str, Any]]:
+        """List files and subdirectories in a directory on this MR's branch.
+
+        Use this navigation tool to discover project structure, locate imported modules,
+        or find related test files.
+
+        Args:
+            directory: Directory path relative to repo root (default: "" for root).
+
+        Returns:
+            List of entries with 'name', 'path', 'type' ('file' or 'dir'), and 'size'.
+        """
+        validated_dir = context.validate_directory_access(directory)
+        raw_items = await platform.list_directory(
+            context.repo, validated_dir, context.head_sha
+        )
+        safe_items: list[dict[str, Any]] = []
+        for item in raw_items:
+            path = item.get("path", "")
+            try:
+                if item.get("type") == "file":
+                    context.validate_file_access(path)
+                safe_items.append(item)
+            except SecurityScopeViolationError:
+                continue
+        return safe_items
+
+    return [
+        get_pr_diff,
+        get_file_content,
+        get_pr_metadata,
+        list_repository_files,
+    ]

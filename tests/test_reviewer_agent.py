@@ -23,8 +23,9 @@ def test_build_reviewer_agent():
     assert agent is not None
     assert "review" in agent.name.lower()
     assert agent.tools is not None
-    assert len(agent.tools) == 3
+    assert len(agent.tools) == 4
     tool_names = [t.__name__ for t in agent.tools]
     assert "get_pr_diff" in tool_names
     assert "get_file_content" in tool_names
     assert "get_pr_metadata" in tool_names
+    assert "list_repository_files" in tool_names

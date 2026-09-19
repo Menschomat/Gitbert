@@ -183,3 +183,31 @@ async def test_set_commit_status(gitea_adapter):
     sent_body = status_mock.calls.last.request.read().decode("utf-8")
     assert "success" in sent_body
     assert "All checks passed" in sent_body
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_list_directory(gitea_adapter):
+    """Verify listing repository directory contents."""
+    contents_mock = respx.get(
+        "https://gitea.example.com/api/v1/repos/owner/repo/contents/src"
+    ).mock(
+        return_value=Response(
+            200,
+            json=[
+                {
+                    "name": "models.py",
+                    "path": "src/models.py",
+                    "type": "file",
+                    "size": 120,
+                },
+                {"name": "utils", "path": "src/utils", "type": "dir", "size": 0},
+            ],
+        )
+    )
+
+    items = await gitea_adapter.list_directory("owner/repo", "src", "head-sha")
+    assert contents_mock.called
+    assert len(items) == 2
+    assert items[0]["name"] == "models.py"
+    assert items[1]["type"] == "dir"

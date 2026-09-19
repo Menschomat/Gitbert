@@ -97,3 +97,27 @@ async def test_scoped_get_pr_metadata(mock_platform, scoped_context):
     assert meta["number"] == 10
     assert meta["title"] == "Add greetings"
     assert "src/hello.py" in meta["allowed_files"]
+
+
+@pytest.mark.asyncio
+async def test_scoped_list_repository_files(mock_platform, scoped_context):
+    """Verify list_repository_files navigates directory and filters sensitive files."""
+    mock_platform.list_directory.return_value = [
+        {"name": "app.py", "path": "src/app.py", "type": "file", "size": 100},
+        {"name": ".env", "path": ".env", "type": "file", "size": 50},
+        {"name": "utils", "path": "src/utils", "type": "dir", "size": 0},
+    ]
+
+    tools = create_scoped_tools(scoped_context, mock_platform)
+    list_tool = next(t for t in tools if t.__name__ == "list_repository_files")
+
+    items = await list_tool("src")
+    # .env should be filtered out from directory listing
+    item_names = [i["name"] for i in items]
+    assert "app.py" in item_names
+    assert "utils" in item_names
+    assert ".env" not in item_names
+
+    # Traversal attempts should be blocked
+    with pytest.raises(SecurityScopeViolationError):
+        await list_tool("../../")

@@ -51,3 +51,10 @@ class ICodePlatform(ABC):
     ) -> None:
         """Set commit status check (e.g. pending, success, failure)."""
         pass
+
+    @abstractmethod
+    async def list_directory(
+        self, repo: str, path: str = "", ref: str = ""
+    ) -> list[dict[str, Any]]:
+        """List files and subdirectories at a given repository path."""
+        pass

@@ -196,3 +196,28 @@ class GiteaAdapter(ICodePlatform):
                 json=payload,
             )
             resp.raise_for_status()
+
+    async def list_directory(
+        self, repo: str, path: str = "", ref: str = ""
+    ) -> list[dict[str, Any]]:
+        """List files and subdirectories at a given repository path."""
+        url = f"/api/v1/repos/{repo}/contents"
+        if path:
+            url = f"{url}/{path.lstrip('/')}"
+        params = {"ref": ref} if ref else {}
+
+        async with self._get_client() as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                return [
+                    {
+                        "name": item.get("name", ""),
+                        "path": item.get("path", ""),
+                        "type": item.get("type", "file"),
+                        "size": item.get("size", 0),
+                    }
+                    for item in data
+                ]
+            return []

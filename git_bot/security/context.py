@@ -110,6 +110,42 @@ class ScopedMRContext:
         except SecurityScopeViolationError:
             return False
 
+    def validate_directory_access(self, directory_path: str = "") -> str:
+        """Validate that a directory path is safe for listing repository files.
+
+        Args:
+            directory_path: Relative directory path in the repository (e.g. 'src').
+
+        Returns:
+            Normalized directory path.
+
+        Raises:
+            SecurityScopeViolationError: If the directory traverses path or hits .git.
+        """
+        if not directory_path or directory_path in (".", "./"):
+            return ""
+
+        if directory_path.startswith("/"):
+            raise SecurityScopeViolationError(
+                f"Access Denied: Absolute path '{directory_path}' is not permitted."
+            )
+
+        normalized = PurePosixPath(directory_path).as_posix()
+        if normalized.startswith("./"):
+            normalized = normalized[2:]
+
+        parts = normalized.split("/")
+        if ".." in parts:
+            raise SecurityScopeViolationError(
+                f"Access Denied: Traversal in '{directory_path}' is forbidden."
+            )
+        if ".git" in parts:
+            raise SecurityScopeViolationError(
+                f"Access Denied: VCS metadata in '{directory_path}' is forbidden."
+            )
+
+        return normalized
+
     @property
     def session_key(self) -> str:
         """Generate a globally unique, collision-proof ADK session ID."""

@@ -1,0 +1,33 @@
+# Git
+.git
+.gitignore
+
+# CI/CD & IDEs
+.gitea
+.github
+.kilo
+.idea
+.vscode
+
+# Python & Environment
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Tests & Linting
+tests
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Secrets & Environment variables
+.env
+*.local.env
+
+# ADK Local State
+.adk
+sessions

@@ -1,0 +1,88 @@
+"""Tests for domain models."""
+
+import pytest
+from pydantic import ValidationError
+
+from git_bot.models.events import EventType, PRReviewEvent
+from git_bot.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
+from git_bot.models.review import InlineComment, ReviewDecision, ReviewResult
+
+
+def test_commit_status_validation():
+    """Verify CommitStatus initializes and validates states."""
+    status = CommitStatus(
+        state=CommitState.SUCCESS,
+        description="All checks passed",
+    )
+    assert status.state == CommitState.SUCCESS
+    assert status.context == "git-bot/pr-review"
+    assert status.description == "All checks passed"
+
+
+def test_pr_metadata_validation():
+    """Verify PRMetadata model parses correctly with changed files."""
+    pr = PRMetadata(
+        repo="octocat/hello-world",
+        number=42,
+        title="Add greetings feature",
+        author="alice",
+        base_ref="main",
+        base_sha="abc1234",
+        head_ref="feature/greetings",
+        head_sha="def5678",
+        changed_files=[
+            ChangedFile(filename="src/hello.py", status="added", additions=10)
+        ],
+    )
+    assert pr.repo == "octocat/hello-world"
+    assert pr.number == 42
+    assert len(pr.changed_files) == 1
+    assert pr.changed_files[0].filename == "src/hello.py"
+
+
+def test_review_result_serialization():
+    """Verify ReviewResult model serialization and inline comment structure."""
+    result = ReviewResult(
+        decision=ReviewDecision.REQUEST_CHANGES,
+        summary="Found potential SQL injection vulnerability.",
+        risks_or_concerns=["Raw string formatting in SQL query at line 24."],
+        inline_comments=[
+            InlineComment(
+                path="src/db.py",
+                new_position=24,
+                body="Use parameterized query instead of string formatting.",
+            )
+        ],
+    )
+    assert result.decision == ReviewDecision.REQUEST_CHANGES
+    assert len(result.inline_comments) == 1
+    assert result.inline_comments[0].path == "src/db.py"
+
+    dump = result.model_dump()
+    assert dump["decision"] == "REQUEST_CHANGES"
+    assert dump["inline_comments"][0]["new_position"] == 24
+
+
+def test_invalid_review_decision_raises():
+    """Verify invalid decision enum raises ValidationError."""
+    with pytest.raises(ValidationError):
+        ReviewResult(
+            decision="INVALID_DECISION",  # type: ignore[arg-type]
+            summary="Test",
+        )
+
+
+def test_pr_review_event():
+    """Verify PRReviewEvent holds normalized webhook event data."""
+    event = PRReviewEvent(
+        event_type=EventType.PR_OPENED,
+        platform="gitea",
+        repo="org/project",
+        pr_number=1,
+        sender="bob",
+        head_sha="sha-head",
+        base_sha="sha-base",
+    )
+    assert event.event_type == EventType.PR_OPENED
+    assert event.platform == "gitea"
+    assert event.pr_number == 1

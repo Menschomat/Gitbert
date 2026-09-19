@@ -8,7 +8,7 @@ def test_agent_initialization():
     """Verify root_agent is configured properly with instructions and model."""
     assert root_agent is not None
     assert root_agent.name == "git_bot"
-    assert "time" in root_agent.instruction.lower()
+    assert "reviewer" in root_agent.instruction.lower()
 
 
 def test_agent_tools_registered():

@@ -1,0 +1,18 @@
+# git_bot configuration file template (config.toml)
+
+# Server options
+host = "0.0.0.0"
+port = 8080
+max_concurrent_reviews = 5
+
+# Review options: "advisory" (non-blocking comments) or "enforcing" (approve/request changes)
+review_mode = "advisory"
+bot_name = "git_bot"
+
+# Model options
+model_name = "gemini-2.0-flash"
+
+# Gitea platform options
+gitea_url = "http://localhost:3000"
+# gitea_token = "your-gitea-token"
+# gitea_webhook_secret = "your-webhook-secret"

@@ -1,31 +1,177 @@
-"""Configuration settings for git_bot."""
+"""Tiered multi-source configuration for git_bot.
 
+Hierarchy (highest priority first):
+1. Explicit function arguments / CLI arguments
+2. Environment variables
+3. .env file
+4. TOML configuration file (e.g. config.toml)
+5. Default values
+"""
+
+import argparse
 import os
-from dataclasses import dataclass
+import tomllib
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
 
-from dotenv import load_dotenv
-
-# Load .env variables if present
-load_dotenv()
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-@dataclass(frozen=True)
-class Settings:
-    """Agent runtime settings."""
+class ReviewMode(StrEnum):
+    """Review operation mode."""
 
-    model: str = os.getenv("MODEL_NAME", "gemini-2.0-flash")
-    agent_name: str = os.getenv("AGENT_NAME", "git_bot")
-    agent_description: str = os.getenv(
-        "AGENT_DESCRIPTION",
-        "A base AI agent ready for extensions, currently equipped with time tools.",
+    ADVISORY = "advisory"
+    ENFORCING = "enforcing"
+
+
+def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
+    """Parse known CLI arguments for configuration overrides."""
+    if args is None:
+        return {}
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--host", type=str)
+    parser.add_argument("--port", type=int)
+    parser.add_argument("--max-concurrent-reviews", type=int)
+    parser.add_argument("--review-mode", type=str)
+    parser.add_argument("--bot-name", type=str)
+    parser.add_argument("--model-name", type=str)
+    parser.add_argument("--gitea-url", type=str)
+    parser.add_argument("--gitea-token", type=str)
+    parser.add_argument("--gitea-webhook-secret", type=str)
+    parser.add_argument("--config", type=str, dest="config_file")
+
+    parsed, _ = parser.parse_known_args(args)
+    return {k: v for k, v in vars(parsed).items() if v is not None}
+
+
+def load_toml_file(path: str | Path | None) -> dict[str, Any]:
+    """Load settings dictionary from a TOML file if present."""
+    if not path:
+        return {}
+    file_path = Path(path)
+    if not file_path.is_file():
+        return {}
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        raw_data = tomllib.loads(content)
+        # Flatten nested sections if present ([app], [gitea], [model])
+        flattened: dict[str, Any] = {}
+        for k, v in raw_data.items():
+            if isinstance(v, dict):
+                flattened.update(v)
+            else:
+                flattened[k] = v
+        return flattened
+    except Exception:
+        return {}
+
+
+class Settings(BaseSettings):
+    """Unified runtime settings for git_bot."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
-    instruction: str = os.getenv(
-        "AGENT_INSTRUCTION",
-        (
-            "You are an AI assistant. You can check the current date and time "
-            "using your time tool when requested. Be concise, accurate, and helpful."
+
+    # Server settings
+    host: str = Field(default="0.0.0.0", description="Binding host for webhook server")
+    port: int = Field(default=8080, description="Binding port for webhook server")
+    max_concurrent_reviews: int = Field(
+        default=5, description="Maximum simultaneous PR reviews"
+    )
+
+    # Review settings
+    review_mode: ReviewMode = Field(
+        default=ReviewMode.ADVISORY,
+        description="Review enforcement mode ('advisory' or 'enforcing')",
+    )
+    bot_name: str = Field(
+        default="git_bot", description="Name of the bot user in Gitea"
+    )
+    instruction: str = Field(
+        default=(
+            "You are an AI code reviewer. Analyze pull request changes "
+            "for logic bugs, security vulnerabilities, edge cases, and code quality."
         ),
+        description="System instruction for the reviewer agent",
+    )
+
+    # Model settings
+    model_name: str = Field(
+        default="gemini-2.0-flash", description="Underlying LLM model name"
+    )
+    google_api_key: SecretStr | None = Field(
+        default=None, description="Google Gemini API Key"
+    )
+
+    # Gitea platform settings
+    gitea_url: str = Field(
+        default="http://localhost:3000", description="Base URL of the Gitea instance"
+    )
+    gitea_token: SecretStr | None = Field(
+        default=None, description="Gitea API personal access token"
+    )
+    gitea_webhook_secret: SecretStr | None = Field(
+        default=None, description="HMAC-SHA256 secret for webhook validation"
+    )
+    config_file: str | None = Field(
+        default=None, description="Optional path to configuration TOML file"
+    )
+
+    def __init__(
+        self,
+        _toml_file: str | None = None,
+        _env_file: str | None = ".env",
+        **values: Any,
+    ):
+        # 1. Determine TOML config path
+        toml_path = (
+            _toml_file
+            or values.get("config_file")
+            or os.getenv("CONFIG_FILE")
+            or ("config.toml" if Path("config.toml").is_file() else None)
+        )
+        file_values = load_toml_file(toml_path)
+
+        # 2. Merge: file values as baseline, overridden by explicit keyword arguments
+        combined_values = {**file_values, **values}
+        super().__init__(_env_file=_env_file, **combined_values)
+
+    @property
+    def model(self) -> str:
+        """Alias for backward compatibility with ADK agent definitions."""
+        return self.model_name
+
+    @property
+    def agent_name(self) -> str:
+        """Alias for backward compatibility with ADK agent definitions."""
+        return self.bot_name
+
+    @property
+    def agent_description(self) -> str:
+        """Alias for backward compatibility."""
+        return "Automated AI Code Reviewer for Gitea Merge Requests."
+
+
+def get_settings(
+    cli_args: list[str] | None = None,
+    config_file: str | None = None,
+    _env_file: str | None = ".env",
+    **overrides: Any,
+) -> Settings:
+    """Factory to produce Settings instance with multi-source priority cascade."""
+    cli_overrides = parse_cli_args(cli_args)
+    combined = {**overrides, **cli_overrides}
+    return Settings(
+        _toml_file=config_file or combined.get("config_file"),
+        _env_file=_env_file,
+        **combined,
     )
 
 
-settings = Settings()
+# Default singleton instance for standard imports
+settings = get_settings()

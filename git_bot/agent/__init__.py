@@ -1,11 +1,12 @@
-"""Main agent definition for git_bot using Google ADK 2.0."""
+"""Agent package."""
 
 from google.adk.agents.llm_agent import Agent
 
+from git_bot.agent.reviewer import build_reviewer_agent
 from git_bot.config import settings
 from git_bot.tools import get_current_time
 
-# Root agent definition required by ADK CLI and runners
+# Root baseline agent for ADK CLI and general inspection
 root_agent = Agent(
     name=settings.agent_name,
     model=settings.model,
@@ -13,3 +14,5 @@ root_agent = Agent(
     instruction=settings.instruction,
     tools=[get_current_time],
 )
+
+__all__ = ["build_reviewer_agent", "root_agent"]

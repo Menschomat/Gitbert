@@ -86,3 +86,41 @@ def test_pr_review_event():
     assert event.event_type == EventType.PR_OPENED
     assert event.platform == "gitea"
     assert event.pr_number == 1
+
+
+def test_pr_comment_model():
+    """Verify PRComment model validation and defaults."""
+    from datetime import UTC, datetime
+
+    from git_bot.models.comments import CommentType, PRComment
+
+    now = datetime.now(UTC)
+    comment = PRComment(
+        id=101,
+        author="git_bot",
+        is_bot=True,
+        comment_type=CommentType.REVIEW_COMMENT,
+        body="This is an automated review comment.",
+        created_at=now,
+        path="src/main.py",
+        line=15,
+    )
+    assert comment.id == 101
+    assert comment.is_bot is True
+    assert comment.comment_type == CommentType.REVIEW_COMMENT
+    assert comment.path == "src/main.py"
+    assert comment.line == 15
+
+
+def test_comment_response_model():
+    """Verify CommentResponse model validation."""
+    from git_bot.models.review import CommentResponse
+
+    resp = CommentResponse(
+        should_reply=True,
+        reply="You can catch this with `try ... except FileNotFoundError:`.",
+        reasoning="User asked for code example on how to handle the exception.",
+    )
+    assert resp.should_reply is True
+    assert "FileNotFoundError" in resp.reply  # type: ignore[operator]
+    assert resp.reasoning != ""

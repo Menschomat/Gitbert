@@ -78,3 +78,24 @@ def test_secret_str_masking():
     assert "super-secret-token" not in repr(settings)
     assert "ai-secret-key" not in str(settings)
     assert "ai-secret-key" not in repr(settings)
+
+
+def test_comment_trigger_mode_default_and_override(monkeypatch):
+    """Verify comment_trigger_mode defaults to AUTONOMOUS and can be overridden."""
+    from git_bot.config import CommentTriggerMode
+
+    # 1. Default is AUTONOMOUS (Option B)
+    settings = Settings(_env_file=None)
+    assert settings.comment_trigger_mode == CommentTriggerMode.AUTONOMOUS
+
+    # 2. Env var override
+    monkeypatch.setenv("COMMENT_TRIGGER_MODE", "mention_only")
+    env_settings = get_settings(_env_file=None)
+    assert env_settings.comment_trigger_mode == CommentTriggerMode.MENTION_ONLY
+
+    # 3. CLI override
+    cli_settings = get_settings(
+        cli_args=["--comment-trigger-mode", "autonomous"],
+        _env_file=None,
+    )
+    assert cli_settings.comment_trigger_mode == CommentTriggerMode.AUTONOMOUS

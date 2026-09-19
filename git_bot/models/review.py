@@ -44,3 +44,18 @@ class ReviewResult(BaseModel):
         default_factory=list,
         description="List of targeted line-by-line comments",
     )
+
+
+class CommentResponse(BaseModel):
+    """Structured decision and reply to a user comment."""
+
+    should_reply: bool = Field(
+        description="True if the bot should reply; False if comment needs no response"
+    )
+    reply: str | None = Field(
+        default=None,
+        description="Constructive, friendly markdown reply if should_reply is True",
+    )
+    reasoning: str = Field(
+        description="Internal rationale for deciding whether to reply",
+    )

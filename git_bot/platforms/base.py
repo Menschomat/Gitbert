@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+from git_bot.models.comments import PRComment
 from git_bot.models.events import PRReviewEvent
 from git_bot.models.platform import CommitStatus, PRMetadata
 from git_bot.models.review import ReviewResult
@@ -57,4 +58,14 @@ class ICodePlatform(ABC):
         self, repo: str, path: str = "", ref: str = ""
     ) -> list[dict[str, Any]]:
         """List files and subdirectories at a given repository path."""
+        pass
+
+    @abstractmethod
+    async def get_pr_comments(self, repo: str, pr_number: int) -> list[PRComment]:
+        """Fetch discussion comments and review comments on the pull request."""
+        pass
+
+    @abstractmethod
+    async def post_pr_comment(self, repo: str, pr_number: int, body: str) -> None:
+        """Post a comment to the pull request discussion thread."""
         pass

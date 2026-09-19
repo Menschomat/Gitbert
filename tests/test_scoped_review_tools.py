@@ -121,3 +121,43 @@ async def test_scoped_list_repository_files(mock_platform, scoped_context):
     # Traversal attempts should be blocked
     with pytest.raises(SecurityScopeViolationError):
         await list_tool("../../")
+
+
+@pytest.mark.asyncio
+async def test_scoped_get_pr_comments(mock_platform, scoped_context):
+    """Verify get_pr_comments retrieves and formats prior comments."""
+    from datetime import UTC, datetime
+
+    from git_bot.models.comments import CommentType, PRComment
+
+    mock_platform.get_pr_comments.return_value = [
+        PRComment(
+            id=201,
+            author="git_bot",
+            is_bot=True,
+            comment_type=CommentType.REVIEW_COMMENT,
+            body="Previous issue: missing type annotation.",
+            created_at=datetime.now(UTC),
+            path="src/hello.py",
+            line=5,
+        ),
+        PRComment(
+            id=202,
+            author="contributor",
+            is_bot=False,
+            comment_type=CommentType.ISSUE_COMMENT,
+            body="Fixed in latest commit!",
+            created_at=datetime.now(UTC),
+        ),
+    ]
+
+    tools = create_scoped_tools(scoped_context, mock_platform)
+    comments_tool = next(t for t in tools if t.__name__ == "get_pr_comments")
+
+    comments = await comments_tool()
+    assert len(comments) == 2
+    assert comments[0]["author"] == "git_bot"
+    assert comments[0]["is_bot"] is True
+    assert comments[0]["path"] == "src/hello.py"
+    assert comments[1]["author"] == "contributor"
+    assert comments[1]["is_bot"] is False

@@ -88,3 +88,83 @@ async def test_engine_process_opened_event(mock_platform):
     # 2. Verify review was published to platform
     mock_platform.submit_review.assert_called_once()
     assert result == expected_review
+
+
+@pytest.mark.asyncio
+async def test_engine_process_comment_event_mentioned(mock_platform):
+    """Verify engine responds when bot is mentioned in a comment."""
+    engine = ReviewEngine(platform=mock_platform)
+    event = PRReviewEvent(
+        event_type=EventType.COMMENT,
+        platform="gitea",
+        repo="owner/repo",
+        pr_number=15,
+        sender="alice",
+        comment_id=501,
+        comment_body="@git_bot can you review the latest change?",
+    )
+
+    result = await engine.process_event(event)
+    assert result is None
+    mock_platform.post_pr_comment.assert_called_once()
+    call_args = mock_platform.post_pr_comment.call_args[0]
+    assert call_args[0] == "owner/repo"
+    assert call_args[1] == 15
+    assert "alice" in call_args[2]
+
+
+@pytest.mark.asyncio
+async def test_engine_process_comment_mention_only_ignored(mock_platform):
+    """Verify engine ignores unmentioned comments when in MENTION_ONLY mode."""
+    from git_bot.config import CommentTriggerMode
+
+    settings = Settings(
+        comment_trigger_mode=CommentTriggerMode.MENTION_ONLY,
+        _env_file=None,
+    )
+    engine = ReviewEngine(platform=mock_platform, app_settings=settings)
+    event = PRReviewEvent(
+        event_type=EventType.COMMENT,
+        platform="gitea",
+        repo="owner/repo",
+        pr_number=15,
+        sender="alice",
+        comment_id=502,
+        comment_body="Just updated the documentation.",
+    )
+
+    await engine.process_event(event)
+    mock_platform.post_pr_comment.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_engine_process_comment_custom_responder(mock_platform):
+    """Verify custom comment responder is invoked and posts reply."""
+    from git_bot.models.review import CommentResponse
+
+    mock_responder = AsyncMock(
+        return_value=CommentResponse(
+            should_reply=True,
+            reply="The suggested timeout is 30 seconds.",
+            reasoning="Helpful technical answer.",
+        )
+    )
+    engine = ReviewEngine(
+        platform=mock_platform,
+        responder=mock_responder,
+    )
+    event = PRReviewEvent(
+        event_type=EventType.COMMENT,
+        platform="gitea",
+        repo="owner/repo",
+        pr_number=15,
+        sender="alice",
+        comment_id=503,
+        comment_body="What timeout should we set?",
+    )
+
+    await engine.process_event(event)
+    mock_responder.assert_called_once_with(event)
+    mock_platform.post_pr_comment.assert_called_once_with(
+        "owner/repo", 15, "The suggested timeout is 30 seconds."
+    )

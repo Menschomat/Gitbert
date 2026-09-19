@@ -17,6 +17,7 @@ def get_platform_adapter(
             base_url=cfg.gitea_url,
             token=cfg.gitea_token,
             webhook_secret=cfg.gitea_webhook_secret,
+            bot_name=cfg.bot_name,
         )
 
     raise ValueError(f"Unsupported code platform: '{platform_name}'")

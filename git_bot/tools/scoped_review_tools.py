@@ -95,9 +95,36 @@ def create_scoped_tools(
                 continue
         return safe_items
 
+    async def get_pr_comments() -> list[dict[str, Any]]:
+        """Retrieve all discussion comments and review comments on this MR.
+
+        Use this tool to read past conversations, identify previous bot reviews
+        (is_bot: true), check whether past feedback was addressed, and avoid
+        repeating identical comments.
+
+        Returns:
+            List of comments with 'id', 'author', 'is_bot', 'comment_type',
+            'body', 'created_at', 'path', and 'line'.
+        """
+        comments = await platform.get_pr_comments(context.repo, context.pr_number)
+        return [
+            {
+                "id": c.id,
+                "author": c.author,
+                "is_bot": c.is_bot,
+                "comment_type": c.comment_type.value,
+                "body": c.body,
+                "created_at": c.created_at.isoformat(),
+                "path": c.path,
+                "line": c.line,
+            }
+            for c in comments
+        ]
+
     return [
         get_pr_diff,
         get_file_content,
         get_pr_metadata,
         list_repository_files,
+        get_pr_comments,
     ]

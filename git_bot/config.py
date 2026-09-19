@@ -26,6 +26,13 @@ class ReviewMode(StrEnum):
     ENFORCING = "enforcing"
 
 
+class CommentTriggerMode(StrEnum):
+    """Trigger mode for answering PR comments."""
+
+    MENTION_ONLY = "mention_only"  # Option A: only replies if explicitly mentioned
+    AUTONOMOUS = "autonomous"  # Option B: default, evaluates any comment
+
+
 def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
     """Parse known CLI arguments for configuration overrides."""
     if args is None:
@@ -35,6 +42,7 @@ def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--port", type=int)
     parser.add_argument("--max-concurrent-reviews", type=int)
     parser.add_argument("--review-mode", type=str)
+    parser.add_argument("--comment-trigger-mode", type=str)
     parser.add_argument("--bot-name", type=str)
     parser.add_argument("--model-name", type=str)
     parser.add_argument("--gitea-url", type=str)
@@ -88,6 +96,10 @@ class Settings(BaseSettings):
     review_mode: ReviewMode = Field(
         default=ReviewMode.ADVISORY,
         description="Review enforcement mode ('advisory' or 'enforcing')",
+    )
+    comment_trigger_mode: CommentTriggerMode = Field(
+        default=CommentTriggerMode.AUTONOMOUS,
+        description="Comment response mode: 'autonomous' or 'mention_only'",
     )
     bot_name: str = Field(
         default="git_bot", description="Name of the bot user in Gitea"

@@ -23,7 +23,9 @@ class PRReviewEvent(BaseModel):
     repo: str
     pr_number: int
     sender: str
-    head_sha: str
-    base_sha: str
+    head_sha: str = ""
+    base_sha: str = ""
     is_draft: bool = False
+    comment_id: int | None = None
+    comment_body: str | None = None
     raw_payload: dict[str, Any] = Field(default_factory=dict)

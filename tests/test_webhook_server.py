@@ -97,3 +97,39 @@ async def test_webhook_accepted_and_dispatched(test_settings, mock_platform):
         assert data["status"] == "accepted"
         assert data["pr_number"] == 7
         assert data["repo"] == "testorg/testrepo"
+
+
+@pytest.mark.asyncio
+async def test_webhook_comment_accepted_and_dispatched(test_settings, mock_platform):
+    """Verify valid comment webhook is accepted with 202 and event type comment."""
+    mock_platform.parse_event.return_value = PRReviewEvent(
+        event_type=EventType.COMMENT,
+        platform="gitea",
+        repo="testorg/testrepo",
+        pr_number=7,
+        sender="alice",
+        comment_id=77,
+        comment_body="@git_bot please explain line 15",
+    )
+    app = create_app(test_settings, mock_platform)
+
+    payload = {"action": "created"}
+    payload_bytes = json.dumps(payload).encode("utf-8")
+    sig = hmac.new(b"my-test-secret", payload_bytes, hashlib.sha256).hexdigest()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/webhook/gitea",
+            headers={
+                "X-Gitea-Event": "issue_comment",
+                "X-Gitea-Signature": sig,
+                "Content-Type": "application/json",
+            },
+            content=payload_bytes,
+        )
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "accepted"
+        assert data["event"] == "comment"

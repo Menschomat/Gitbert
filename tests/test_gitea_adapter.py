@@ -211,3 +211,143 @@ async def test_list_directory(gitea_adapter):
     assert len(items) == 2
     assert items[0]["name"] == "models.py"
     assert items[1]["type"] == "dir"
+
+
+def test_parse_issue_comment_event(gitea_adapter):
+    """Verify parsing Gitea issue_comment on a PR."""
+    headers = {"X-Gitea-Event": "issue_comment"}
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "owner/repo"},
+        "sender": {"username": "developer_alice"},
+        "issue": {
+            "number": 42,
+            "pull_request": {"head": {"sha": "head-123"}},
+        },
+        "comment": {
+            "id": 999,
+            "body": "@git_bot what do you think about this refactoring?",
+        },
+    }
+    event = gitea_adapter.parse_event(headers, payload)
+    assert event is not None
+    assert event.event_type == EventType.COMMENT
+    assert event.pr_number == 42
+    assert event.sender == "developer_alice"
+    assert event.comment_id == 999
+    assert "@git_bot" in event.comment_body
+
+
+def test_parse_comment_loop_prevention(gitea_adapter):
+    """Verify bot's own comments are strictly ignored to prevent infinite loops."""
+    headers = {"X-Gitea-Event": "issue_comment"}
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "owner/repo"},
+        "sender": {"username": "git_bot"},  # Same as adapter's bot_name
+        "issue": {"number": 42, "pull_request": {}},
+        "comment": {"id": 1001, "body": "I am answering my own comment"},
+    }
+    event = gitea_adapter.parse_event(headers, payload)
+    assert event is not None
+    assert event.event_type == EventType.IGNORED
+
+
+def test_parse_issue_comment_non_pr(gitea_adapter):
+    """Verify comments on regular issues (not PRs) are ignored."""
+    headers = {"X-Gitea-Event": "issue_comment"}
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "owner/repo"},
+        "sender": {"username": "developer_alice"},
+        "issue": {"number": 10},  # No pull_request key
+        "comment": {"id": 55, "body": "Standard issue comment"},
+    }
+    event = gitea_adapter.parse_event(headers, payload)
+    assert event is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_pr_comments(gitea_adapter):
+    """Verify fetching and parsing PR comments with bot identification."""
+    respx.get(
+        "https://gitea.example.com/api/v1/repos/owner/repo/issues/42/comments"
+    ).mock(
+        return_value=Response(
+            200,
+            json=[
+                {
+                    "id": 1,
+                    "user": {"username": "developer_alice"},
+                    "body": "Can you check line 10?",
+                    "created_at": "2026-09-19T10:00:00Z",
+                },
+                {
+                    "id": 2,
+                    "user": {"username": "git_bot"},
+                    "body": (
+                        "<!-- git-bot-comment -->\n\n🤖 **git_bot**\n\nLooks good."
+                    ),
+                    "created_at": "2026-09-19T10:05:00Z",
+                },
+            ],
+        )
+    )
+    respx.get(
+        "https://gitea.example.com/api/v1/repos/owner/repo/pulls/42/reviews"
+    ).mock(
+        return_value=Response(
+            200,
+            json=[{"id": 10}],
+        )
+    )
+    respx.get(
+        "https://gitea.example.com/api/v1/repos/owner/repo/pulls/42/reviews/10/comments"
+    ).mock(
+        return_value=Response(
+            200,
+            json=[
+                {
+                    "id": 3,
+                    "user": {"username": "other_reviewer"},
+                    "body": "Nit: naming could be clearer.",
+                    "created_at": "2026-09-19T10:10:00Z",
+                    "path": "src/app.py",
+                    "line_num": 25,
+                }
+            ],
+        )
+    )
+
+    comments = await gitea_adapter.get_pr_comments("owner/repo", 42)
+    assert len(comments) == 3
+    assert comments[0].author == "developer_alice"
+    assert comments[0].is_bot is False
+
+    # Second comment is from git_bot
+    assert comments[1].author == "git_bot"
+    assert comments[1].is_bot is True
+
+    # Third comment is inline review comment
+    assert comments[2].author == "other_reviewer"
+    assert comments[2].path == "src/app.py"
+    assert comments[2].line == 25
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_post_pr_comment(gitea_adapter):
+    """Verify posting PR comment includes watermark and bot branding."""
+    comment_mock = respx.post(
+        "https://gitea.example.com/api/v1/repos/owner/repo/issues/42/comments"
+    ).mock(return_value=Response(201, json={"id": 123}))
+
+    await gitea_adapter.post_pr_comment(
+        "owner/repo", 42, "Here is how to optimize the database query."
+    )
+    assert comment_mock.called
+    body = comment_mock.calls.last.request.read().decode("utf-8")
+    assert "<!-- git-bot-comment -->" in body
+    assert "🤖 **git_bot**" in body
+    assert "Here is how to optimize the database query." in body

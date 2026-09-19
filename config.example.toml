@@ -7,6 +7,8 @@ max_concurrent_reviews = 5
 
 # Review options: "advisory" (non-blocking comments) or "enforcing" (approve/request changes)
 review_mode = "advisory"
+# Comment trigger mode: "autonomous" (Option B: smart helpful replies, default) or "mention_only" (Option A)
+comment_trigger_mode = "autonomous"
 bot_name = "git_bot"
 
 # Model options

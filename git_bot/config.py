@@ -43,6 +43,16 @@ def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--max-concurrent-reviews", type=int)
     parser.add_argument("--review-mode", type=str)
     parser.add_argument("--comment-trigger-mode", type=str)
+    parser.add_argument(
+        "--await-actions-completion",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
+    parser.add_argument(
+        "--diagnose-action-failures",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
     parser.add_argument("--bot-name", type=str)
     parser.add_argument("--model-name", type=str)
     parser.add_argument("--gitea-url", type=str)
@@ -100,6 +110,18 @@ class Settings(BaseSettings):
     comment_trigger_mode: CommentTriggerMode = Field(
         default=CommentTriggerMode.AUTONOMOUS,
         description="Comment response mode: 'autonomous' or 'mention_only'",
+    )
+    await_actions_completion: bool = Field(
+        default=True,
+        description="Wait for running CI actions before final approval",
+    )
+    diagnose_action_failures: bool = Field(
+        default=True,
+        description="Autonomously diagnose failed Action logs and post fixes",
+    )
+    max_action_log_chars: int = Field(
+        default=15000,
+        description="Max characters of failed Action log for diagnosis",
     )
     bot_name: str = Field(
         default="git_bot", description="Name of the bot user in Gitea"

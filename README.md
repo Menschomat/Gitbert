@@ -11,7 +11,7 @@ Built with **Google Agent Development Kit (ADK) 2.0** • Managed with **uv** �
 [![Gitea Actions CI/CD](https://img.shields.io/badge/CI%2FCD-Gitea_Actions-609926?logo=gitea&logoColor=white)](https://about.gitea.com/)
 [![Docker](https://img.shields.io/badge/Docker-Multi--stage_3.14-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Code Style](https://img.shields.io/badge/code%20style-Ruff-black?logo=ruff&logoColor=white)](https://docs.astral.sh/ruff/)
-[![Tests](https://img.shields.io/badge/tests-55%20passed-success)](tests/)
+[![Tests](https://img.shields.io/badge/tests-66%20passed-success)](tests/)
 
 </div>
 
@@ -26,6 +26,7 @@ Instead of generic, shallow comments, **git_bot** inspects full pull request dif
 ### 🏆 Why git_bot? (Competitive Highlights)
 
 - 🛡️ **Hard Programmatic Security Guardrails**: Unlike naive LLM bots that take arbitrary user input, `git_bot` isolates every review within an immutable [`ScopedMRContext`](file:///Users/fweihrauch/Documents/Code/git_bot/git_bot/security/context.py). The LLM is given **read-only scoped tools** with a strict file allowlist—preventing prompt injection attacks from accessing files outside the MR or executing unauthorized writes.
+- ⚙️ **Two-Phase CI/CD Awareness & Action Log Diagnostics**: If Gitea Actions or CI jobs are running, the bot immediately posts code review comments without waiting. Once CI finishes, it issues the final approval—or if an Action fails, autonomously pulls failure logs, isolates root causes, and posts actionable code solutions directly on the MR.
 - 💬 **Historical Context & Smart Comment Interaction**: Reads prior MR comments, reliably identifies its own previous feedback (`is_bot: true`), tracks resolved issues across PR iterations, and intelligently responds to developer questions on the thread without infinite loops or noise.
 - 🔌 **Modular Platform Abstraction Layer (`ICodePlatform`)**: Built on a clean Adapter Pattern. Ships with a full-featured **Gitea** integration today, architected from the ground up for seamless expansion to **GitHub** and **GitLab** without touching core review logic.
 - ⚡ **High-Throughput Safe Concurrency**: Engineered with Python `asyncio` and `asyncio.Semaphore`. Handles multiple simultaneous PRs across different repositories with **zero shared mutable state** and bounded API throughput.
@@ -33,7 +34,7 @@ Instead of generic, shallow comments, **git_bot** inspects full pull request dif
   - **Advisory Mode**: Submits non-blocking commentary with distinct visual badges (`🟢 READY TO MERGE` or `🔴 CHANGES REQUESTED`) while updating commit check statuses—ideal for safe adoption.
   - **Enforcing Mode**: Submits native platform `APPROVE` or `REQUEST_CHANGES` reviews to gate your repository's branch protection rules.
 - 🎛️ **Unified Tiered Configuration**: Powered by `pydantic-settings`. Seamlessly cascades configuration from `CLI Flags > Environment Variables > .env File > config.toml > Code Defaults`.
-- 🧪 **100% Test-Driven Quality**: Backed by a comprehensive 55-test suite covering webhook verification, security boundaries, mock REST API integrations, and review workflows.
+- 🧪 **100% Test-Driven Quality**: Backed by a comprehensive 66-test suite covering webhook verification, security boundaries, mock REST API integrations, and review workflows.
 
 ---
 
@@ -267,6 +268,8 @@ Health check is available at `http://localhost:8080/healthz`.
 | `max_concurrent_reviews` | `--max-concurrent-reviews` | `MAX_CONCURRENT_REVIEWS` | `5` | Semaphore limit for simultaneous reviews |
 | `review_mode` | `--review-mode` | `REVIEW_MODE` | `advisory` | `advisory` (comments only) or `enforcing` |
 | `comment_trigger_mode` | `--comment-trigger-mode` | `COMMENT_TRIGGER_MODE` | `autonomous` | `autonomous` (Option B: smart replies) or `mention_only` (Option A) |
+| `await_actions_completion` | `--await-actions-completion` | `AWAIT_ACTIONS_COMPLETION` | `true` | Wait for running CI actions before final approval verdict |
+| `diagnose_action_failures` | `--diagnose-action-failures` | `DIAGNOSE_ACTION_FAILURES` | `true` | Autonomously diagnose failed Action logs and post fixes |
 | `bot_name` | `--bot-name` | `BOT_NAME` | `git_bot` | Name of the bot user displayed in Gitea |
 | `model_name` | `--model-name` | `MODEL_NAME` | `gemini-2.0-flash` | Gemini model used for reasoning |
 | `google_api_key` | — | `GOOGLE_API_KEY` | `None` | Google Gemini API credentials |

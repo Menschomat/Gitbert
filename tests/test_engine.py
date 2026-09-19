@@ -6,7 +6,7 @@ import pytest
 
 from git_bot.config import ReviewMode, Settings
 from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.models.platform import ChangedFile, CommitState, PRMetadata
+from git_bot.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
 from git_bot.models.review import ReviewDecision, ReviewResult
 from git_bot.orchestrator.engine import ReviewEngine
 from git_bot.platforms.base import ICodePlatform
@@ -30,6 +30,9 @@ def mock_platform():
     platform.get_pr_diff.return_value = (
         "diff --git a/src/auth.py b/src/auth.py\n+def login(): pass\n"
     )
+    platform.get_commit_statuses.return_value = []
+    platform.find_pr_for_commit.return_value = 15
+    platform.get_action_log.return_value = ""
     return platform
 
 
@@ -168,3 +171,133 @@ async def test_engine_process_comment_custom_responder(mock_platform):
     mock_platform.post_pr_comment.assert_called_once_with(
         "owner/repo", 15, "The suggested timeout is 30 seconds."
     )
+
+
+@pytest.mark.asyncio
+async def test_engine_process_opened_event_with_running_actions(mock_platform):
+    """Verify two-phase mode: advisory comments when Actions are pending."""
+    # External CI action is currently PENDING
+    mock_platform.get_commit_statuses.return_value = [
+        CommitStatus(
+            state=CommitState.PENDING,
+            context="ci/build",
+            description="Build in progress",
+        )
+    ]
+    engine = ReviewEngine(platform=mock_platform)
+    event = PRReviewEvent(
+        event_type=EventType.PR_OPENED,
+        platform="gitea",
+        repo="owner/repo",
+        pr_number=15,
+        sender="alice",
+        head_sha="head-222",
+        base_sha="base-111",
+    )
+
+    review = await engine.process_event(event)
+    assert review is not None
+
+    # Verify review was submitted as advisory COMMENT
+    submitted_review = mock_platform.submit_review.call_args[0][2]
+    assert submitted_review.decision == ReviewDecision.COMMENT
+    assert "Notice" in submitted_review.summary
+
+    # Status check remains PENDING
+    final_status = mock_platform.set_commit_status.call_args[0][2]
+    assert final_status.state == CommitState.PENDING
+    assert "awaiting CI" in final_status.description
+
+
+@pytest.mark.asyncio
+async def test_engine_status_event_all_succeeded(mock_platform):
+    """Verify finalizing review to SUCCESS when all CI actions finish cleanly."""
+    engine = ReviewEngine(platform=mock_platform)
+
+    # Seed the cached review
+    engine._cached_reviews["owner/repo:15"] = ReviewResult(
+        decision=ReviewDecision.APPROVE,
+        summary="Clean code",
+    )
+
+    # CI checks are now all SUCCESS
+    mock_platform.get_commit_statuses.return_value = [
+        CommitStatus(
+            state=CommitState.SUCCESS,
+            context="ci/build",
+            description="Build succeeded",
+        )
+    ]
+
+    event = PRReviewEvent(
+        event_type=EventType.STATUS,
+        platform="gitea",
+        repo="owner/repo",
+        sender="gitea_actions",
+        head_sha="head-222",
+        status_state="success",
+        status_context="ci/build",
+    )
+
+    await engine.process_event(event)
+
+    # Status check updated to SUCCESS
+    last_status = mock_platform.set_commit_status.call_args[0][2]
+    assert last_status.state == CommitState.SUCCESS
+    assert "passed" in last_status.description
+
+
+@pytest.mark.asyncio
+async def test_engine_status_event_failed_with_diagnostics(mock_platform):
+    """Verify diagnosing failure and posting advice when CI action fails."""
+    from git_bot.models.review import ActionDiagnosticResult
+
+    mock_platform.get_commit_statuses.return_value = [
+        CommitStatus(
+            state=CommitState.FAILURE,
+            context="ci/test",
+            description="Tests failed",
+            target_url="https://gitea.example.com/logs/job-1",
+        )
+    ]
+    mock_platform.get_action_log.return_value = "AssertionError: expected 200 got 500"
+
+    mock_diagnostician = AsyncMock(
+        return_value=ActionDiagnosticResult(
+            context="ci/test",
+            diagnosis="Database connection refused during integration test.",
+            suggested_fix="Set TEST_DB_HOST=localhost in CI environment.",
+            related_files=["src/db.py"],
+        )
+    )
+
+    engine = ReviewEngine(
+        platform=mock_platform,
+        diagnostician=mock_diagnostician,
+    )
+
+    event = PRReviewEvent(
+        event_type=EventType.STATUS,
+        platform="gitea",
+        repo="owner/repo",
+        sender="gitea_actions",
+        head_sha="head-222",
+        status_state="failure",
+        status_context="ci/test",
+    )
+
+    await engine.process_event(event)
+
+    # Diagnostician called
+    mock_diagnostician.assert_called_once()
+
+    # Diagnostic advice posted to PR
+    mock_platform.post_pr_comment.assert_called_once()
+    comment_body = mock_platform.post_pr_comment.call_args[0][2]
+    assert "CI Action Failed: `ci/test`" in comment_body
+    assert "Database connection refused" in comment_body
+    assert "Set TEST_DB_HOST=localhost" in comment_body
+
+    # Status check updated to FAILURE
+    last_status = mock_platform.set_commit_status.call_args[0][2]
+    assert last_status.state == CommitState.FAILURE

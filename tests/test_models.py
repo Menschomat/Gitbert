@@ -124,3 +124,31 @@ def test_comment_response_model():
     assert resp.should_reply is True
     assert "FileNotFoundError" in resp.reply  # type: ignore[operator]
     assert resp.reasoning != ""
+
+
+def test_action_diagnostic_result_model():
+    """Verify ActionDiagnosticResult model validation."""
+    from git_bot.models.events import EventType, PRReviewEvent
+    from git_bot.models.review import ActionDiagnosticResult
+
+    diag = ActionDiagnosticResult(
+        context="test-python3.14",
+        diagnosis="Pytest failed on tests/test_auth.py with ModuleNotFoundError.",
+        suggested_fix="Add missing dependency to pyproject.toml.",
+        related_files=["pyproject.toml", "tests/test_auth.py"],
+    )
+    assert diag.context == "test-python3.14"
+    assert len(diag.related_files) == 2
+
+    status_event = PRReviewEvent(
+        event_type=EventType.STATUS,
+        platform="gitea",
+        repo="owner/repo",
+        sender="ci_runner",
+        head_sha="head-123",
+        status_state="failure",
+        status_context="test-python3.14",
+        target_url="https://gitea.example.com/owner/repo/actions/runs/1",
+    )
+    assert status_event.event_type == EventType.STATUS
+    assert status_event.status_state == "failure"

@@ -5,11 +5,19 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from git_bot.agent.prompts import COMMENT_RESPONDER_INSTRUCTION
+from git_bot.agent.prompts import (
+    ACTION_DIAGNOSTIC_INSTRUCTION,
+    COMMENT_RESPONDER_INSTRUCTION,
+)
 from git_bot.config import CommentTriggerMode, Settings, get_settings
 from git_bot.models.events import EventType, PRReviewEvent
 from git_bot.models.platform import CommitState, CommitStatus
-from git_bot.models.review import CommentResponse, ReviewDecision, ReviewResult
+from git_bot.models.review import (
+    ActionDiagnosticResult,
+    CommentResponse,
+    ReviewDecision,
+    ReviewResult,
+)
 from git_bot.orchestrator.publisher import ReviewPublisher
 from git_bot.platforms.base import ICodePlatform
 from git_bot.security.context import ScopedMRContext
@@ -26,6 +34,7 @@ class ReviewEngine:
         app_settings: Settings | None = None,
         analyzer: Callable[..., Any] | None = None,
         responder: Callable[..., Any] | None = None,
+        diagnostician: Callable[..., Any] | None = None,
     ):
         self.platform = platform
         self.settings = app_settings or get_settings()
@@ -35,6 +44,8 @@ class ReviewEngine:
         )
         self._custom_analyzer = analyzer
         self._custom_responder = responder
+        self._custom_diagnostician = diagnostician
+        self._cached_reviews: dict[str, ReviewResult] = {}
 
     async def analyze_pr(self, context: ScopedMRContext, diff: str) -> ReviewResult:
         """Analyze PR diff and generate structured ReviewResult."""
@@ -198,6 +209,130 @@ class ReviewEngine:
 
         return None
 
+    async def diagnose_action_failure(
+        self, repo: str, pr_number: int, context: str, log_content: str
+    ) -> ActionDiagnosticResult | None:
+        """Diagnose a failed Action run using the diagnostic prompt or hook."""
+        if self._custom_diagnostician is not None:
+            return await self._custom_diagnostician(
+                repo, pr_number, context, log_content
+            )
+
+        if self.settings.google_api_key:
+            try:
+                from google import genai
+
+                client = genai.Client(
+                    api_key=self.settings.google_api_key.get_secret_value()
+                )
+                prompt = (
+                    f"Action '{context}' failed on PR #{pr_number} "
+                    f"in repo '{repo}'.\n\n"
+                    f"Failure Log:\n```\n{log_content}\n```\n\n"
+                    f"{ACTION_DIAGNOSTIC_INSTRUCTION}"
+                )
+                res = client.models.generate_content(
+                    model=self.settings.model_name,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": ActionDiagnosticResult,
+                    },
+                )
+                if res.text:
+                    return ActionDiagnosticResult.model_validate_json(res.text)
+            except Exception as exc:
+                logger.warning("Failed to diagnose action via Gemini: %s", exc)
+
+        return ActionDiagnosticResult(
+            context=context,
+            diagnosis="Action exited with a non-zero exit code during CI execution.",
+            suggested_fix="Inspect the job failure logs and ensure all tests pass.",
+            related_files=[],
+        )
+
+    async def handle_status_event(self, event: PRReviewEvent) -> None:
+        """Handle commit status updates from CI / Gitea Actions."""
+        pr_number = event.pr_number
+        if not pr_number and event.head_sha:
+            pr_number = (
+                await self.platform.find_pr_for_commit(event.repo, event.head_sha) or 0
+            )
+
+        if not pr_number:
+            logger.info(
+                "No matching open PR for commit %s in %s",
+                event.head_sha,
+                event.repo,
+            )
+            return
+
+        statuses = await self.platform.get_commit_statuses(event.repo, event.head_sha)
+        external = [s for s in statuses if not s.context.startswith("git-bot/")]
+
+        # If any check is still pending, wait
+        if any(s.state == CommitState.PENDING for s in external):
+            logger.info(
+                "PR #%d still has running CI checks, awaiting completion.",
+                pr_number,
+            )
+            return
+
+        failed_checks = [
+            s for s in external if s.state in (CommitState.FAILURE, CommitState.ERROR)
+        ]
+
+        cache_key = f"{event.repo}:{pr_number}"
+        cached_review = self._cached_reviews.get(cache_key)
+
+        if failed_checks:
+            failed = failed_checks[0]
+            if self.settings.diagnose_action_failures:
+                log_content = ""
+                if failed.target_url:
+                    raw_log = await self.platform.get_action_log(
+                        event.repo, failed.target_url
+                    )
+                    max_chars = self.settings.max_action_log_chars
+                    log_content = raw_log[-max_chars:] if raw_log else ""
+
+                diag = await self.diagnose_action_failure(
+                    event.repo, pr_number, failed.context, log_content
+                )
+                if diag:
+                    comment_body = (
+                        f"### ❌ CI Action Failed: `{diag.context}`\n\n"
+                        f"**Diagnosis**:\n{diag.diagnosis}\n\n"
+                        f"**Suggested Fix**:\n{diag.suggested_fix}"
+                    )
+                    await self.platform.post_pr_comment(
+                        event.repo, pr_number, comment_body
+                    )
+
+            fail_status = CommitStatus(
+                state=CommitState.FAILURE,
+                description=f"CI Action failed: {failed.context}",
+                context="git-bot/pr-review",
+            )
+            await self.platform.set_commit_status(
+                event.repo, event.head_sha, fail_status
+            )
+        else:
+            # All CI checks succeeded!
+            if cached_review and cached_review.decision == ReviewDecision.APPROVE:
+                final_status = CommitStatus(
+                    state=CommitState.SUCCESS,
+                    description="All code reviews and CI checks passed!",
+                    context="git-bot/pr-review",
+                )
+                await self.platform.set_commit_status(
+                    event.repo, event.head_sha, final_status
+                )
+                if self.settings.review_mode.value == "enforcing":
+                    await self.platform.submit_review(
+                        event.repo, pr_number, cached_review
+                    )
+
     async def process_event(self, event: PRReviewEvent) -> ReviewResult | None:
         """Process incoming PR review or comment event through the full lifecycle."""
         if event.event_type == EventType.IGNORED:
@@ -214,13 +349,23 @@ class ReviewEngine:
             await self.evaluate_and_reply_comment(event)
             return None
 
+        if event.event_type == EventType.STATUS:
+            logger.info(
+                "Processing status event (%s: %s) on %s",
+                event.status_context,
+                event.status_state,
+                event.repo,
+            )
+            await self.handle_status_event(event)
+            return None
+
         if event.is_draft:
             logger.info(
                 "Skipping review for draft PR #%d (%s)", event.pr_number, event.repo
             )
             return None
 
-        # 1. Publish PENDING commit status
+        # 1. Publish initial PENDING commit status
         pending_status = CommitStatus(
             state=CommitState.PENDING,
             description="AI Code Review in progress...",
@@ -248,8 +393,40 @@ class ReviewEngine:
 
         # 4. Analyze PR
         review = await self.analyze_pr(context, diff)
+        cache_key = f"{event.repo}:{event.pr_number}"
+        self._cached_reviews[cache_key] = review
 
-        # 5. Publish review verdict and final commit status
+        # 5. Check if external CI actions are currently running
+        statuses = await self.platform.get_commit_statuses(event.repo, event.head_sha)
+        external = [s for s in statuses if not s.context.startswith("git-bot/")]
+        has_pending = any(s.state == CommitState.PENDING for s in external)
+
+        if has_pending and self.settings.await_actions_completion:
+            # Two-phase mode: publish advisory comments, keep status PENDING
+            notice_summary = (
+                f"{review.summary}\n\n"
+                "> ⏳ **Notice**: External CI Actions are currently running. "
+                "Final approval verdict will be submitted once all checks complete."
+            )
+            advisory = ReviewResult(
+                decision=ReviewDecision.COMMENT,
+                summary=notice_summary,
+                strengths=review.strengths,
+                risks_or_concerns=review.risks_or_concerns,
+                inline_comments=review.inline_comments,
+            )
+            await self.platform.submit_review(event.repo, event.pr_number, advisory)
+            hold_status = CommitStatus(
+                state=CommitState.PENDING,
+                description="Code review complete; awaiting CI Actions...",
+                context="git-bot/pr-review",
+            )
+            await self.platform.set_commit_status(
+                event.repo, event.head_sha, hold_status
+            )
+            return review
+
+        # Classic direct mode: publish final verdict immediately
         await self.publisher.publish(
             repo=event.repo,
             pr_number=event.pr_number,

@@ -99,3 +99,24 @@ def test_comment_trigger_mode_default_and_override(monkeypatch):
         _env_file=None,
     )
     assert cli_settings.comment_trigger_mode == CommentTriggerMode.AUTONOMOUS
+
+
+def test_action_settings_default_and_override(monkeypatch):
+    """Verify action completion and diagnosis settings defaults and overrides."""
+    settings = Settings(_env_file=None)
+    assert settings.await_actions_completion is True
+    assert settings.diagnose_action_failures is True
+    assert settings.max_action_log_chars == 15000
+
+    monkeypatch.setenv("AWAIT_ACTIONS_COMPLETION", "false")
+    monkeypatch.setenv("DIAGNOSE_ACTION_FAILURES", "false")
+    env_settings = get_settings(_env_file=None)
+    assert env_settings.await_actions_completion is False
+    assert env_settings.diagnose_action_failures is False
+
+    cli_settings = get_settings(
+        cli_args=["--no-await-actions-completion", "--no-diagnose-action-failures"],
+        _env_file=None,
+    )
+    assert cli_settings.await_actions_completion is False
+    assert cli_settings.diagnose_action_failures is False

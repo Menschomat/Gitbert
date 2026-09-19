@@ -351,3 +351,113 @@ async def test_post_pr_comment(gitea_adapter):
     assert "<!-- git-bot-comment -->" in body
     assert "🤖 **git_bot**" in body
     assert "Here is how to optimize the database query." in body
+
+
+def test_parse_status_event(gitea_adapter):
+    """Verify parsing Gitea commit status event."""
+    headers = {"X-Gitea-Event": "status"}
+    payload = {
+        "sha": "head-sha-777",
+        "state": "failure",
+        "context": "ci/test",
+        "description": "Tests failed: 1 failure",
+        "target_url": "https://gitea.example.com/owner/repo/actions/runs/12",
+        "repository": {"full_name": "owner/repo"},
+        "sender": {"username": "gitea_actions"},
+    }
+    event = gitea_adapter.parse_event(headers, payload)
+    assert event is not None
+    assert event.event_type == EventType.STATUS
+    assert event.head_sha == "head-sha-777"
+    assert event.status_state == "failure"
+    assert event.status_context == "ci/test"
+    assert "actions/runs/12" in event.target_url
+
+
+def test_parse_status_event_loop_prevention(gitea_adapter):
+    """Verify bot's own commit statuses are ignored to prevent loops."""
+    headers = {"X-Gitea-Event": "status"}
+    payload = {
+        "sha": "head-sha-777",
+        "state": "success",
+        "context": "git-bot/pr-review",  # Published by git_bot!
+        "repository": {"full_name": "owner/repo"},
+        "sender": {"username": "git_bot"},
+    }
+    event = gitea_adapter.parse_event(headers, payload)
+    assert event is not None
+    assert event.event_type == EventType.IGNORED
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_commit_statuses(gitea_adapter):
+    """Verify fetching commit statuses from Gitea."""
+    respx.get(
+        "https://gitea.example.com/api/v1/repos/owner/repo/commits/abc123/statuses"
+    ).mock(
+        return_value=Response(
+            200,
+            json=[
+                {
+                    "status": "pending",
+                    "context": "ci/build",
+                    "description": "Building...",
+                },
+                {
+                    "status": "success",
+                    "context": "ci/lint",
+                    "description": "Lint passed",
+                },
+            ],
+        )
+    )
+
+    statuses = await gitea_adapter.get_commit_statuses("owner/repo", "abc123")
+    assert len(statuses) == 2
+    assert statuses[0].context == "ci/build"
+    assert statuses[0].state == CommitState.PENDING
+    assert statuses[1].context == "ci/lint"
+    assert statuses[1].state == CommitState.SUCCESS
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_action_log(gitea_adapter):
+    """Verify fetching Action logs from URL."""
+    respx.get("https://gitea.example.com/logs/job-1").mock(
+        return_value=Response(
+            200,
+            text=(
+                "Traceback (most recent call last):\n"
+                "  File 'app.py', line 10, in <module>\n"
+                "ValueError: invalid config\n"
+            ),
+        )
+    )
+
+    log = await gitea_adapter.get_action_log(
+        "owner/repo", "https://gitea.example.com/logs/job-1"
+    )
+    assert "ValueError: invalid config" in log
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_find_pr_for_commit(gitea_adapter):
+    """Verify finding open PR matching commit head SHA."""
+    respx.get("https://gitea.example.com/api/v1/repos/owner/repo/pulls").mock(
+        return_value=Response(
+            200,
+            json=[
+                {"number": 10, "head": {"sha": "other-sha"}},
+                {"number": 15, "head": {"sha": "target-sha"}},
+            ],
+        )
+    )
+
+    pr_num = await gitea_adapter.find_pr_for_commit("owner/repo", "target-sha")
+    assert pr_num == 15
+
+    not_found = await gitea_adapter.find_pr_for_commit("owner/repo", "missing-sha")
+    assert not_found is None

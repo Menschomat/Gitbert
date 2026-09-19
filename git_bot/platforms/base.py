@@ -69,3 +69,18 @@ class ICodePlatform(ABC):
     async def post_pr_comment(self, repo: str, pr_number: int, body: str) -> None:
         """Post a comment to the pull request discussion thread."""
         pass
+
+    @abstractmethod
+    async def get_commit_statuses(self, repo: str, sha: str) -> list[CommitStatus]:
+        """Fetch all commit status checks for a given commit hash."""
+        pass
+
+    @abstractmethod
+    async def get_action_log(self, repo: str, target_url: str | None = None) -> str:
+        """Fetch failure logs of a CI Action job."""
+        pass
+
+    @abstractmethod
+    async def find_pr_for_commit(self, repo: str, sha: str) -> int | None:
+        """Find the open pull request number associated with a commit SHA."""
+        pass

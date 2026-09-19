@@ -59,3 +59,17 @@ class CommentResponse(BaseModel):
     reasoning: str = Field(
         description="Internal rationale for deciding whether to reply",
     )
+
+
+class ActionDiagnosticResult(BaseModel):
+    """Diagnostic analysis and remediation for a failed CI Action."""
+
+    context: str = Field(description="Name or context of the failed CI job/action")
+    diagnosis: str = Field(description="Explanation of what failed and why")
+    suggested_fix: str = Field(
+        description="Concrete code change, command, or guidance to fix the failure"
+    )
+    related_files: list[str] = Field(
+        default_factory=list,
+        description="Files in the repository or PR associated with the failure",
+    )

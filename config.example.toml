@@ -9,6 +9,9 @@ max_concurrent_reviews = 5
 review_mode = "advisory"
 # Comment trigger mode: "autonomous" (Option B: smart helpful replies, default) or "mention_only" (Option A)
 comment_trigger_mode = "autonomous"
+# Action / CI coordination options
+await_actions_completion = true
+diagnose_action_failures = true
 bot_name = "git_bot"
 
 # Model options

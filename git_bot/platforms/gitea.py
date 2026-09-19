@@ -10,7 +10,7 @@ from pydantic import SecretStr
 
 from git_bot.models.comments import CommentType, PRComment
 from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.models.platform import ChangedFile, CommitStatus, PRMetadata
+from git_bot.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
 from git_bot.models.review import ReviewResult
 from git_bot.platforms.base import ICodePlatform
 
@@ -173,6 +173,36 @@ class GiteaAdapter(ICodePlatform):
                 sender=sender,
                 comment_id=comment_id,
                 comment_body=comment_body,
+                raw_payload=payload,
+            )
+
+        # 4. Commit Status events (from CI / Gitea Actions)
+        if event_name == "status":
+            context = payload.get("context", "")
+            # Loop protection: Ignore status events published by git_bot itself
+            if context.startswith("git-bot/"):
+                return PRReviewEvent(
+                    event_type=EventType.IGNORED,
+                    platform="gitea",
+                    repo=repo_full_name,
+                    sender=sender,
+                )
+
+            sha = payload.get("sha", "")
+            state = payload.get("state", "")
+            description = payload.get("description", "")
+            target_url = payload.get("target_url", "")
+
+            return PRReviewEvent(
+                event_type=EventType.STATUS,
+                platform="gitea",
+                repo=repo_full_name,
+                sender=sender,
+                head_sha=sha,
+                status_state=state,
+                status_context=context,
+                target_url=target_url,
+                status_description=description,
                 raw_payload=payload,
             )
 
@@ -393,3 +423,63 @@ class GiteaAdapter(ICodePlatform):
                 json={"body": watermarked},
             )
             resp.raise_for_status()
+
+    async def get_commit_statuses(self, repo: str, sha: str) -> list[CommitStatus]:
+        """Fetch all commit status checks for a given commit hash."""
+        url = f"/api/v1/repos/{repo}/commits/{sha}/statuses"
+        statuses: list[CommitStatus] = []
+        async with self._get_client() as client:
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, list):
+                        for item in data:
+                            raw_state = item.get("status", item.get("state", "pending"))
+                            try:
+                                state = CommitState(raw_state.lower())
+                            except ValueError:
+                                state = CommitState.PENDING
+                            statuses.append(
+                                CommitStatus(
+                                    state=state,
+                                    description=item.get("description", ""),
+                                    context=item.get("context", "default"),
+                                    target_url=item.get("target_url"),
+                                )
+                            )
+            except httpx.HTTPError:
+                pass
+        return statuses
+
+    async def get_action_log(self, repo: str, target_url: str | None = None) -> str:
+        """Fetch failure logs of a CI Action job."""
+        if not target_url:
+            return "No log URL provided."
+        async with self._get_client() as client:
+            try:
+                resp = await client.get(target_url)
+                if resp.status_code == 200:
+                    return resp.text
+                return f"Failed to fetch logs: HTTP {resp.status_code}"
+            except Exception as exc:
+                return f"Error retrieving logs from {target_url}: {exc}"
+
+    async def find_pr_for_commit(self, repo: str, sha: str) -> int | None:
+        """Find the open pull request number associated with a commit SHA."""
+        async with self._get_client() as client:
+            try:
+                resp = await client.get(
+                    f"/api/v1/repos/{repo}/pulls",
+                    params={"state": "open", "limit": 50},
+                )
+                if resp.status_code == 200:
+                    pulls = resp.json()
+                    if isinstance(pulls, list):
+                        for pr in pulls:
+                            head_sha = pr.get("head", {}).get("sha", "")
+                            if head_sha == sha:
+                                return pr.get("number")
+            except httpx.HTTPError:
+                pass
+        return None

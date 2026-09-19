@@ -2,7 +2,8 @@
 
 Hard security boundaries:
 - Repository and PR number are permanently bound from context (not LLM arguments).
-- File access is strictly validated against context.allowed_files.
+- File access is locked to this repository on the MR's head commit.
+- Path traversal and sensitive secret files (.env, keys) are strictly blocked.
 """
 
 from collections.abc import Callable
@@ -31,16 +32,20 @@ def create_scoped_tools(
         return await platform.get_pr_diff(context.repo, context.pr_number)
 
     async def get_file_content(path: str) -> str:
-        """Fetch the full content of a file modified in this Merge Request.
+        """Fetch the content of any file in the repository on this MR's branch.
+
+        Use this to inspect imports, type definitions, utilities, or configuration
+        files to get the bigger picture of how the PR changes fit into the codebase.
 
         Args:
-            path: Relative path of the file (must be part of this MR's changes).
+            path: Relative path of the file in the repository (e.g. 'src/models.py').
 
         Returns:
             Full raw text content of the file at head commit.
 
         Raises:
-            SecurityScopeViolationError: If path is not part of this MR's allowlist.
+            SecurityScopeViolationError: If path attempts directory traversal
+                                         or matches sensitive file policy.
         """
         validated_path = context.validate_file_access(path)
         return await platform.get_file_content(

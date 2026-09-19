@@ -63,8 +63,14 @@ async def test_scoped_get_file_content_allowed(mock_platform, scoped_context):
 
     content = await get_file_tool("src/hello.py")
     assert "def hello():" in content
-    mock_platform.get_file_content.assert_called_once_with(
+    mock_platform.get_file_content.assert_called_with(
         "myorg/repo", "src/hello.py", "head-sha"
+    )
+
+    # Reading unmodified repository files for context should also succeed
+    await get_file_tool("pyproject.toml")
+    mock_platform.get_file_content.assert_called_with(
+        "myorg/repo", "pyproject.toml", "head-sha"
     )
 
 

@@ -13,7 +13,7 @@ def test_default_settings():
     assert settings.max_concurrent_reviews == 5
     assert settings.review_mode == ReviewMode.ADVISORY
     assert settings.bot_name == "Gitbert"
-    assert settings.model_name == "gemini-2.0-flash"
+    assert settings.model_name == "gemini-3.8-flash"
     assert settings.gitea_url == "http://localhost:3000"
     assert settings.gitea_token is None
 
@@ -130,8 +130,8 @@ def test_model_provider_settings_default_and_override(monkeypatch):
 
     settings = Settings(_env_file=None)
     assert settings.model_provider == ModelProvider.GEMINI
-    assert settings.model_name == "gemini-2.0-flash"
-    assert settings.get_adk_model() == "gemini-2.0-flash"
+    assert settings.model_name == "gemini-3.8-flash"
+    assert settings.get_adk_model() == "gemini-3.8-flash"
 
     # Env overrides
     monkeypatch.setenv("MODEL_PROVIDER", "litellm")

@@ -157,7 +157,7 @@ class Settings(BaseSettings):
 
     # Native Gemini settings
     model_name: str = Field(
-        default="gemini-2.0-flash", description="Underlying Gemini LLM model name"
+        default="gemini-3.8-flash", description="Underlying Gemini LLM model name"
     )
     google_api_key: SecretStr | None = Field(
         default=None, description="Google Gemini API Key"

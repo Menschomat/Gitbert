@@ -19,7 +19,7 @@ bot_name = "Gitbert"
 model_provider = "gemini"
 
 # Native Gemini options
-model_name = "gemini-2.0-flash"
+model_name = "gemini-3.8-flash"
 # google_api_key = "your-gemini-api-key"
 
 # Agnostic OpenAI-compatible / OpenRouter / vLLM options (when model_provider = "litellm")

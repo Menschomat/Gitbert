@@ -209,7 +209,7 @@ git_bot - Multi-Platform PR Review Agent (ADK 2.0)
 ============================================================
 Bot Name:          git_bot
 Review Mode:       ADVISORY
-Model:             gemini-2.0-flash
+Model:             gemini-3.8-flash
 Gitea URL:         https://gitea.example.com
 Gitea Token:       [Configured]
 Webhook Secret:    [Configured]
@@ -276,7 +276,7 @@ Health check is available at `http://localhost:8080/healthz`.
 | `await_actions_completion` | `--await-actions-completion` | `AWAIT_ACTIONS_COMPLETION` | `true` | Wait for running CI actions before final approval verdict |
 | `diagnose_action_failures` | `--diagnose-action-failures` | `DIAGNOSE_ACTION_FAILURES` | `true` | Autonomously diagnose failed Action logs and post fixes |
 | `bot_name` | `--bot-name` | `BOT_NAME` | `git_bot` | Name of the bot user displayed in Gitea |
-| `model_name` | `--model-name` | `MODEL_NAME` | `gemini-2.0-flash` | Gemini model used for reasoning |
+| `model_name` | `--model-name` | `MODEL_NAME` | `gemini-3.8-flash` | Gemini model used for reasoning |
 | `google_api_key` | — | `GOOGLE_API_KEY` | `None` | Google Gemini API credentials |
 | `gitea_url` | `--gitea-url` | `GITEA_URL` | `http://localhost:3000` | Base URL of your Gitea instance |
 | `gitea_token` | `--gitea-token` | `GITEA_TOKEN` | `None` | Scoped API access token |

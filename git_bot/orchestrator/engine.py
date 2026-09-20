@@ -126,7 +126,9 @@ class ReviewEngine:
         # Check mention
         bot_handle = f"@{self.settings.bot_name.lower()}"
         is_mentioned = (
-            bot_handle in comment_body.lower() or "@git_bot" in comment_body.lower()
+            bot_handle in comment_body.lower()
+            or "@gitbert" in comment_body.lower()
+            or "@git_bot" in comment_body.lower()
         )
 
         # If MENTION_ONLY mode (Option A) and not mentioned, do nothing
@@ -195,9 +197,9 @@ class ReviewEngine:
         # Fallback / heuristic response when mentioned without external LLM
         if is_mentioned:
             fallback_reply = (
-                f"Hello @{event.sender}! I received your mention regarding "
-                f"PR #{event.pr_number}. I will incorporate your feedback into "
-                "the next review cycle."
+                f"Hello @{event.sender}! Gitbert here. I received your mention "
+                f"regarding PR #{event.pr_number}. I will incorporate your feedback "
+                "into the next review cycle."
             )
             resp = CommentResponse(
                 should_reply=True,

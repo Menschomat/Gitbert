@@ -244,7 +244,7 @@ def test_parse_comment_loop_prevention(gitea_adapter):
     payload = {
         "action": "created",
         "repository": {"full_name": "owner/repo"},
-        "sender": {"username": "git_bot"},  # Same as adapter's bot_name
+        "sender": {"username": "Gitbert"},  # Same as adapter's bot_name
         "issue": {"number": 42, "pull_request": {}},
         "comment": {"id": 1001, "body": "I am answering my own comment"},
     }
@@ -349,7 +349,7 @@ async def test_post_pr_comment(gitea_adapter):
     assert comment_mock.called
     body = comment_mock.calls.last.request.read().decode("utf-8")
     assert "<!-- git-bot-comment -->" in body
-    assert "🤖 **git_bot**" in body
+    assert "🤖 **Gitbert**" in body
     assert "Here is how to optimize the database query." in body
 
 

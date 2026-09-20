@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🤖 git_bot
+# 🤖 Gitbert (`git_bot`)
 
-### Autonomous, Production-Grade AI Code Reviewer for Git Platforms
+### The Friendly, Calm AI Senior Developer for Git Platforms
 Built with **Google Agent Development Kit (ADK) 2.0** • Managed with **uv** • Multi-Platform Architecture
 
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.13%20%7C%203.14-blue?logo=python&logoColor=white)](https://www.python.org/)
@@ -17,11 +17,14 @@ Built with **Google Agent Development Kit (ADK) 2.0** • Managed with **uv** �
 
 ---
 
-## 🌟 Overview
+## 🌟 Overview & Persona: Meet Gitbert
 
-**git_bot** is an autonomous AI code review engine designed to bring principal-engineer-level review rigor to your code hosting platforms.
+> **Wer ist Gitbert?**
+> Klingt nach dem sympathischen, leicht bebrillten Senior-Entwickler im Team:
+> - **Der Bezug**: Klassischer Vorname, gemischt mit der Tech-Comic-Kultur (*Dilbert*).
+> - **Die Story**: *„Gitbert ist der ruhige Kollege, der immer da ist, wenn etwas brennt. Extrem nahbar, menschlich und wirkt wie ein echtes Teammitglied.“*
 
-Instead of generic, shallow comments, **git_bot** inspects full pull request diffs, validates surrounding file context, checks for regressions, and publishes structured line-by-line feedback alongside official commit status checks.
+**Gitbert** ist ein autonomer KI-Code-Reviewer und Senior-Entwickler-Begleiter für Merge Requests. Er bringt Principal-Engineer-Rigor mit, bleibt dabei aber immer nahbar, verständnisvoll und lösungsorientiert. Statt oberflächlicher Ratschläge liest Gitbert den gesamten Kontext, versteht vorherige Kommentare, analysiert fehlschlagende CI-Logs und hilft Entwicklern direkt auf Augenhöhe.
 
 ### 🏆 Why git_bot? (Competitive Highlights)
 

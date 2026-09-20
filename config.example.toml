@@ -12,7 +12,7 @@ comment_trigger_mode = "autonomous"
 # Action / CI coordination options
 await_actions_completion = true
 diagnose_action_failures = true
-bot_name = "git_bot"
+bot_name = "Gitbert"
 
 # Model options
 model_name = "gemini-2.0-flash"

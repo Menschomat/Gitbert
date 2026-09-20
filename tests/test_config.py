@@ -12,7 +12,7 @@ def test_default_settings():
     assert settings.port == 8080
     assert settings.max_concurrent_reviews == 5
     assert settings.review_mode == ReviewMode.ADVISORY
-    assert settings.bot_name == "git_bot"
+    assert settings.bot_name == "Gitbert"
     assert settings.model_name == "gemini-2.0-flash"
     assert settings.gitea_url == "http://localhost:3000"
     assert settings.gitea_token is None

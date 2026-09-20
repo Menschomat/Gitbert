@@ -124,12 +124,13 @@ class Settings(BaseSettings):
         description="Max characters of failed Action log for diagnosis",
     )
     bot_name: str = Field(
-        default="git_bot", description="Name of the bot user in Gitea"
+        default="Gitbert", description="Name of the bot user in Gitea"
     )
     instruction: str = Field(
         default=(
-            "You are an AI code reviewer. Analyze pull request changes "
-            "for logic bugs, security vulnerabilities, edge cases, and code quality."
+            "You are Gitbert, the friendly, calm, and approachable senior developer on "
+            "the team. Analyze pull request changes for logic bugs, security "
+            "vulnerabilities, edge cases, and code quality with constructive feedback."
         ),
         description="System instruction for the reviewer agent",
     )
@@ -188,7 +189,10 @@ class Settings(BaseSettings):
     @property
     def agent_description(self) -> str:
         """Alias for backward compatibility."""
-        return "Automated AI Code Reviewer for Gitea Merge Requests."
+        return (
+            "Gitbert: The friendly, experienced AI Senior Developer for "
+            "Gitea Merge Requests."
+        )
 
 
 def get_settings(

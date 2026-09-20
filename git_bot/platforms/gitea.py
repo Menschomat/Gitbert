@@ -23,7 +23,7 @@ class GiteaAdapter(ICodePlatform):
         base_url: str,
         token: SecretStr | None = None,
         webhook_secret: SecretStr | None = None,
-        bot_name: str = "git_bot",
+        bot_name: str = "Gitbert",
         client: httpx.AsyncClient | None = None,
     ):
         self.base_url = base_url.rstrip("/")
@@ -79,7 +79,7 @@ class GiteaAdapter(ICodePlatform):
         action = payload.get("action")
 
         # 1. Infinite Loop Prevention: Never respond to bot's own events
-        if sender.lower() == self.bot_name.lower():
+        if sender.lower() in (self.bot_name.lower(), "gitbert", "git_bot"):
             return PRReviewEvent(
                 event_type=EventType.IGNORED,
                 platform="gitea",
@@ -345,7 +345,9 @@ class GiteaAdapter(ICodePlatform):
                         is_bot = (
                             author.lower() == self.bot_name.lower()
                             or "<!-- git-bot" in body
+                            or "🤖 **Gitbert**" in body
                             or "🤖 **git_bot**" in body
+                            or f"🤖 **{self.bot_name}**" in body
                         )
                         dt_str = item.get("created_at")
                         created_at = (
@@ -384,7 +386,9 @@ class GiteaAdapter(ICodePlatform):
                                 is_bot = (
                                     author.lower() == self.bot_name.lower()
                                     or "<!-- git-bot" in body
+                                    or "🤖 **Gitbert**" in body
                                     or "🤖 **git_bot**" in body
+                                    or f"🤖 **{self.bot_name}**" in body
                                 )
                                 dt_str = item.get("created_at")
                                 created_at = (

@@ -1,5 +1,5 @@
-"""git_bot - An AI Agent built on Google ADK 2.0."""
+"""Gitbert - An AI Code Review Agent built on Google ADK 2.0."""
 
-from gitbert.agent import root_agent
+from gitbert.agent import build_reviewer_agent
 
-__all__ = ["root_agent"]
+__all__ = ["build_reviewer_agent"]

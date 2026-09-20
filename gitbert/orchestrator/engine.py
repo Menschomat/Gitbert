@@ -80,6 +80,7 @@ class ReviewEngine:
                     model=self.settings.model_name,
                     contents=prompt,
                     config={
+                        "system_instruction": REVIEWER_SYSTEM_INSTRUCTION,
                         "response_mime_type": "application/json",
                         "response_schema": ReviewResult,
                     },
@@ -105,15 +106,17 @@ class ReviewEngine:
                     if self.settings.openai_compatible_api_key
                     else None
                 )
-                prompt = (
+                user_prompt = (
                     f"Review MR #{context.pr_number} in repo '{context.repo}'.\n\n"
                     f"Allowed files: {list(context.allowed_files)}\n\n"
-                    f"Diff:\n```\n{diff[:30000]}\n```\n\n"
-                    f"{REVIEWER_SYSTEM_INSTRUCTION}"
+                    f"Diff:\n```\n{diff[:30000]}\n```"
                 )
                 response = await litellm.acompletion(
                     model=self.settings.litellm_model_name,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[
+                        {"role": "system", "content": REVIEWER_SYSTEM_INSTRUCTION},
+                        {"role": "user", "content": user_prompt},
+                    ],
                     api_key=api_key,
                     api_base=self.settings.openai_compatible_api_base,
                     response_format={"type": "json_object"},

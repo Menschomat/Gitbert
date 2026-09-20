@@ -61,6 +61,28 @@ def create_app(
                 logger.exception(
                     "Error executing review for PR #%d: %s", event.pr_number, exc
                 )
+                if (
+                    event.event_type in (EventType.PR_OPENED, EventType.PR_UPDATED)
+                    and event.head_sha
+                ):
+                    try:
+                        from gitbert.models.platform import CommitState, CommitStatus
+
+                        status_context = f"{cfg.bot_name.lower()}/pr-review"
+                        fail_status = CommitStatus(
+                            state=CommitState.FAILURE,
+                            description="AI Review encountered an internal error.",
+                            context=status_context,
+                        )
+                        await plat.set_commit_status(
+                            event.repo, event.head_sha, fail_status
+                        )
+                    except Exception as status_exc:
+                        logger.error(
+                            "Failed to update commit status on error for PR #%d: %s",
+                            event.pr_number,
+                            status_exc,
+                        )
 
     @app.post("/webhook/gitea")
     async def gitea_webhook(

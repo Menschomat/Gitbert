@@ -2,8 +2,11 @@
 
 import hashlib
 import hmac
+import ipaddress
+import socket
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import SecretStr
@@ -13,6 +16,71 @@ from gitbert.models.events import EventType, PRReviewEvent
 from gitbert.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
 from gitbert.models.review import ReviewResult
 from gitbert.platforms.base import ICodePlatform
+
+
+def is_safe_external_url(url: str) -> tuple[bool, str]:
+    """Validate an external URL against SSRF and private network attacks."""
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in ("http", "https"):
+        return False, f"Unsupported URL scheme '{parsed.scheme}'."
+
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "Missing hostname in target URL."
+
+    lower_host = hostname.lower()
+    if (
+        lower_host in ("localhost", "127.0.0.1", "::1")
+        or lower_host.endswith(".local")
+        or lower_host.endswith(".internal")
+        or lower_host.endswith(".localhost")
+    ):
+        return False, f"Access to local hostname '{hostname}' is forbidden."
+
+    # Direct IP validation
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return (
+                False,
+                f"Access to private or restricted IP '{hostname}' is forbidden.",
+            )
+        return True, ""
+    except ValueError:
+        pass
+
+    # Resolve domain to IP addresses to prevent DNS rebinding attacks
+    try:
+        addr_info = socket.getaddrinfo(hostname, None)
+        for *_, sockaddr in addr_info:
+            ip_str = sockaddr[0]
+            ip = ipaddress.ip_address(ip_str)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                msg = (
+                    f"Resolved IP '{ip_str}' for '{hostname}' is in a restricted range."
+                )
+                return False, msg
+    except (socket.gaierror, socket.herror):
+        # Hostname could not be resolved (e.g. mock domain in test, or DNS failure)
+        pass
+    except Exception as exc:
+        return False, f"DNS resolution failed for '{hostname}': {exc}"
+
+    return True, ""
 
 
 class GiteaAdapter(ICodePlatform):
@@ -31,24 +99,32 @@ class GiteaAdapter(ICodePlatform):
         self.webhook_secret = webhook_secret
         self.bot_name = bot_name
         self._custom_client = client
+        self._client: httpx.AsyncClient | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
-        """Create or return an async HTTP client."""
+        """Create or return a reusable async HTTP client with connection pooling."""
         if self._custom_client is not None:
             return self._custom_client
 
-        headers = {
-            "Accept": "application/json",
-            "User-Agent": "git_bot-Reviewer/1.0",
-        }
-        if self.token:
-            headers["Authorization"] = f"token {self.token.get_secret_value()}"
+        if self._client is None or self._client.is_closed:
+            headers = {
+                "Accept": "application/json",
+                "User-Agent": f"{self.bot_name}-Reviewer/1.0",
+            }
+            if self.token:
+                headers["Authorization"] = f"token {self.token.get_secret_value()}"
 
-        return httpx.AsyncClient(
-            base_url=self.base_url,
-            headers=headers,
-            timeout=30.0,
-        )
+            self._client = httpx.AsyncClient(
+                base_url=self.base_url,
+                headers=headers,
+                timeout=30.0,
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close managed HTTP client if open."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
 
     def verify_webhook(self, headers: dict[str, str], raw_body: bytes) -> bool:
         """Verify HMAC-SHA256 signature from X-Gitea-Signature header."""
@@ -210,59 +286,57 @@ class GiteaAdapter(ICodePlatform):
 
     async def get_pr_metadata(self, repo: str, pr_number: int) -> PRMetadata:
         """Fetch metadata and changed files for a pull request."""
-        async with self._get_client() as client:
-            # 1. Fetch PR details
-            pr_resp = await client.get(f"/api/v1/repos/{repo}/pulls/{pr_number}")
-            pr_resp.raise_for_status()
-            pr_json = pr_resp.json()
+        client = self._get_client()
+        # 1. Fetch PR details
+        pr_resp = await client.get(f"/api/v1/repos/{repo}/pulls/{pr_number}")
+        pr_resp.raise_for_status()
+        pr_json = pr_resp.json()
 
-            # 2. Fetch changed files list
-            files_resp = await client.get(
-                f"/api/v1/repos/{repo}/pulls/{pr_number}/files"
+        # 2. Fetch changed files list
+        files_resp = await client.get(f"/api/v1/repos/{repo}/pulls/{pr_number}/files")
+        files_resp.raise_for_status()
+        files_json = files_resp.json()
+
+        changed_files = [
+            ChangedFile(
+                filename=f.get("filename", ""),
+                status=f.get("status", "modified"),
+                additions=f.get("additions", 0),
+                deletions=f.get("deletions", 0),
             )
-            files_resp.raise_for_status()
-            files_json = files_resp.json()
+            for f in files_json
+        ]
 
-            changed_files = [
-                ChangedFile(
-                    filename=f.get("filename", ""),
-                    status=f.get("status", "modified"),
-                    additions=f.get("additions", 0),
-                    deletions=f.get("deletions", 0),
-                )
-                for f in files_json
-            ]
+        base = pr_json.get("base", {})
+        head = pr_json.get("head", {})
 
-            base = pr_json.get("base", {})
-            head = pr_json.get("head", {})
-
-            return PRMetadata(
-                repo=repo,
-                number=pr_number,
-                title=pr_json.get("title", ""),
-                body=pr_json.get("body", "") or "",
-                author=pr_json.get("user", {}).get("username", "unknown"),
-                base_ref=base.get("ref", ""),
-                base_sha=base.get("sha", ""),
-                head_ref=head.get("ref", ""),
-                head_sha=head.get("sha", ""),
-                is_draft=pr_json.get("draft", False),
-                changed_files=changed_files,
-            )
+        return PRMetadata(
+            repo=repo,
+            number=pr_number,
+            title=pr_json.get("title", ""),
+            body=pr_json.get("body", "") or "",
+            author=pr_json.get("user", {}).get("username", "unknown"),
+            base_ref=base.get("ref", ""),
+            base_sha=base.get("sha", ""),
+            head_ref=head.get("ref", ""),
+            head_sha=head.get("sha", ""),
+            is_draft=pr_json.get("draft", False),
+            changed_files=changed_files,
+        )
 
     async def get_pr_diff(self, repo: str, pr_number: int) -> str:
         """Fetch full unified diff for the PR."""
-        async with self._get_client() as client:
-            resp = await client.get(f"/api/v1/repos/{repo}/pulls/{pr_number}.diff")
-            resp.raise_for_status()
-            return resp.text
+        client = self._get_client()
+        resp = await client.get(f"/api/v1/repos/{repo}/pulls/{pr_number}.diff")
+        resp.raise_for_status()
+        return resp.text
 
     async def get_file_content(self, repo: str, path: str, ref: str) -> str:
         """Fetch raw content of a specific file."""
-        async with self._get_client() as client:
-            resp = await client.get(f"/api/v1/repos/{repo}/raw/{path}?ref={ref}")
-            resp.raise_for_status()
-            return resp.text
+        client = self._get_client()
+        resp = await client.get(f"/api/v1/repos/{repo}/raw/{path}?ref={ref}")
+        resp.raise_for_status()
+        return resp.text
 
     async def submit_review(
         self, repo: str, pr_number: int, review: ReviewResult
@@ -280,12 +354,12 @@ class GiteaAdapter(ICodePlatform):
                 for c in review.inline_comments
             ],
         }
-        async with self._get_client() as client:
-            resp = await client.post(
-                f"/api/v1/repos/{repo}/pulls/{pr_number}/reviews",
-                json=body,
-            )
-            resp.raise_for_status()
+        client = self._get_client()
+        resp = await client.post(
+            f"/api/v1/repos/{repo}/pulls/{pr_number}/reviews",
+            json=body,
+        )
+        resp.raise_for_status()
 
     async def set_commit_status(
         self, repo: str, sha: str, status: CommitStatus
@@ -297,12 +371,12 @@ class GiteaAdapter(ICodePlatform):
             "description": status.description,
             "target_url": status.target_url or "",
         }
-        async with self._get_client() as client:
-            resp = await client.post(
-                f"/api/v1/repos/{repo}/statuses/{sha}",
-                json=payload,
-            )
-            resp.raise_for_status()
+        client = self._get_client()
+        resp = await client.post(
+            f"/api/v1/repos/{repo}/statuses/{sha}",
+            json=payload,
+        )
+        resp.raise_for_status()
 
     async def list_directory(
         self, repo: str, path: str = "", ref: str = ""
@@ -313,103 +387,100 @@ class GiteaAdapter(ICodePlatform):
             url = f"{url}/{path.lstrip('/')}"
         params = {"ref": ref} if ref else {}
 
-        async with self._get_client() as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            if isinstance(data, list):
-                return [
-                    {
-                        "name": item.get("name", ""),
-                        "path": item.get("path", ""),
-                        "type": item.get("type", "file"),
-                        "size": item.get("size", 0),
-                    }
-                    for item in data
-                ]
-            return []
+        client = self._get_client()
+        resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, list):
+            return [
+                {
+                    "name": item.get("name", ""),
+                    "path": item.get("path", ""),
+                    "type": item.get("type", "file"),
+                    "size": item.get("size", 0),
+                }
+                for item in data
+            ]
+        return []
 
     async def get_pr_comments(self, repo: str, pr_number: int) -> list[PRComment]:
         """Fetch discussion comments and review comments on the pull request."""
         comments: list[PRComment] = []
-        async with self._get_client() as client:
-            # 1. Issue/PR discussion comments
-            try:
-                resp = await client.get(
-                    f"/api/v1/repos/{repo}/issues/{pr_number}/comments"
-                )
-                if resp.status_code == 200:
-                    for item in resp.json():
-                        author = item.get("user", {}).get("username", "")
-                        body = item.get("body", "")
-                        is_bot = (
-                            author.lower() == self.bot_name.lower()
-                            or "<!-- gitbert" in body
-                            or "<!-- git-bot" in body
-                        )
-                        dt_str = item.get("created_at")
-                        created_at = (
-                            datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-                            if dt_str
-                            else datetime.now(UTC)
-                        )
-                        comments.append(
-                            PRComment(
-                                id=item.get("id", 0),
-                                author=author,
-                                is_bot=is_bot,
-                                comment_type=CommentType.ISSUE_COMMENT,
-                                body=body,
-                                created_at=created_at,
-                            )
-                        )
-            except httpx.HTTPError:
-                pass
+        client = self._get_client()
 
-            # 2. Review comments
-            try:
-                rev_resp = await client.get(
-                    f"/api/v1/repos/{repo}/pulls/{pr_number}/reviews"
-                )
-                if rev_resp.status_code == 200:
-                    for rev in rev_resp.json():
-                        rev_id = rev.get("id")
-                        c_resp = await client.get(
-                            f"/api/v1/repos/{repo}/pulls/{pr_number}/reviews/{rev_id}/comments"
+        # 1. Issue/PR discussion comments
+        try:
+            resp = await client.get(f"/api/v1/repos/{repo}/issues/{pr_number}/comments")
+            if resp.status_code == 200:
+                for item in resp.json():
+                    author = item.get("user", {}).get("username", "")
+                    body = item.get("body", "")
+                    is_bot = (
+                        author.lower() == self.bot_name.lower()
+                        or "<!-- gitbert" in body
+                        or "<!-- git-bot" in body
+                    )
+                    dt_str = item.get("created_at")
+                    created_at = (
+                        datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                        if dt_str
+                        else datetime.now(UTC)
+                    )
+                    comments.append(
+                        PRComment(
+                            id=item.get("id", 0),
+                            author=author,
+                            is_bot=is_bot,
+                            comment_type=CommentType.ISSUE_COMMENT,
+                            body=body,
+                            created_at=created_at,
                         )
-                        if c_resp.status_code == 200:
-                            for item in c_resp.json():
-                                author = item.get("user", {}).get("username", "")
-                                body = item.get("body", "")
-                                is_bot = (
-                                    author.lower() == self.bot_name.lower()
-                                    or "<!-- gitbert" in body
-                                    or "<!-- git-bot" in body
+                    )
+        except httpx.HTTPError:
+            pass
+
+        # 2. Review comments
+        try:
+            rev_resp = await client.get(
+                f"/api/v1/repos/{repo}/pulls/{pr_number}/reviews"
+            )
+            if rev_resp.status_code == 200:
+                for rev in rev_resp.json():
+                    rev_id = rev.get("id")
+                    c_resp = await client.get(
+                        f"/api/v1/repos/{repo}/pulls/{pr_number}/reviews/{rev_id}/comments"
+                    )
+                    if c_resp.status_code == 200:
+                        for item in c_resp.json():
+                            author = item.get("user", {}).get("username", "")
+                            body = item.get("body", "")
+                            is_bot = (
+                                author.lower() == self.bot_name.lower()
+                                or "<!-- gitbert" in body
+                                or "<!-- git-bot" in body
+                            )
+                            dt_str = item.get("created_at")
+                            created_at = (
+                                datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+                                if dt_str
+                                else datetime.now(UTC)
+                            )
+                            line_val = item.get("line_num") or item.get("position")
+                            comments.append(
+                                PRComment(
+                                    id=item.get("id", 0),
+                                    author=author,
+                                    is_bot=is_bot,
+                                    comment_type=CommentType.REVIEW_COMMENT,
+                                    body=body,
+                                    created_at=created_at,
+                                    path=item.get("path"),
+                                    line=line_val,
+                                    reply_to_id=item.get("reply_to_id"),
                                 )
-                                dt_str = item.get("created_at")
-                                created_at = (
-                                    datetime.fromisoformat(
-                                        dt_str.replace("Z", "+00:00")
-                                    )
-                                    if dt_str
-                                    else datetime.now(UTC)
-                                )
-                                line_val = item.get("line_num") or item.get("position")
-                                comments.append(
-                                    PRComment(
-                                        id=item.get("id", 0),
-                                        author=author,
-                                        is_bot=is_bot,
-                                        comment_type=CommentType.REVIEW_COMMENT,
-                                        body=body,
-                                        created_at=created_at,
-                                        path=item.get("path"),
-                                        line=line_val,
-                                        reply_to_id=item.get("reply_to_id"),
-                                    )
-                                )
-            except httpx.HTTPError:
-                pass
+                            )
+        except httpx.HTTPError:
+            pass
 
         comments.sort(key=lambda c: c.created_at)
         return comments
@@ -417,46 +488,59 @@ class GiteaAdapter(ICodePlatform):
     async def post_pr_comment(self, repo: str, pr_number: int, body: str) -> None:
         """Post a comment to the pull request discussion thread."""
         watermarked = f"<!-- gitbert-comment -->\n\n🤖 **{self.bot_name}**\n\n{body}"
-        async with self._get_client() as client:
-            resp = await client.post(
-                f"/api/v1/repos/{repo}/issues/{pr_number}/comments",
-                json={"body": watermarked},
-            )
-            resp.raise_for_status()
+        client = self._get_client()
+        resp = await client.post(
+            f"/api/v1/repos/{repo}/issues/{pr_number}/comments",
+            json={"body": watermarked},
+        )
+        resp.raise_for_status()
 
     async def get_commit_statuses(self, repo: str, sha: str) -> list[CommitStatus]:
         """Fetch all commit status checks for a given commit hash."""
         url = f"/api/v1/repos/{repo}/commits/{sha}/statuses"
         statuses: list[CommitStatus] = []
-        async with self._get_client() as client:
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if isinstance(data, list):
-                        for item in data:
-                            raw_state = item.get("status", item.get("state", "pending"))
-                            try:
-                                state = CommitState(raw_state.lower())
-                            except ValueError:
-                                state = CommitState.PENDING
-                            statuses.append(
-                                CommitStatus(
-                                    state=state,
-                                    description=item.get("description", ""),
-                                    context=item.get("context", "default"),
-                                    target_url=item.get("target_url"),
-                                )
+        client = self._get_client()
+        try:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    for item in data:
+                        raw_state = item.get("status", item.get("state", "pending"))
+                        try:
+                            state = CommitState(raw_state.lower())
+                        except ValueError:
+                            state = CommitState.PENDING
+                        statuses.append(
+                            CommitStatus(
+                                state=state,
+                                description=item.get("description", ""),
+                                context=item.get("context", "default"),
+                                target_url=item.get("target_url"),
                             )
-            except httpx.HTTPError:
-                pass
+                        )
+        except httpx.HTTPError:
+            pass
         return statuses
 
     async def get_action_log(self, repo: str, target_url: str | None = None) -> str:
-        """Fetch failure logs of a CI Action job."""
+        """Fetch failure logs of a CI Action job safely with SSRF protection."""
         if not target_url:
             return "No log URL provided."
-        async with self._get_client() as client:
+
+        target_url = target_url.strip()
+        parsed_target = urlparse(target_url)
+        parsed_base = urlparse(self.base_url)
+
+        # 1. Check if relative URL or belongs strictly to the configured Gitea base_url
+        is_same_origin = not parsed_target.netloc or (
+            parsed_target.scheme.lower() == parsed_base.scheme.lower()
+            and parsed_target.netloc.lower() == parsed_base.netloc.lower()
+        )
+
+        if is_same_origin:
+            # Internal request to Gitea: Safe to use authenticated client
+            client = self._get_client()
             try:
                 resp = await client.get(target_url)
                 if resp.status_code == 200:
@@ -465,21 +549,36 @@ class GiteaAdapter(ICodePlatform):
             except Exception as exc:
                 return f"Error retrieving logs from {target_url}: {exc}"
 
+        # 2. External URL: Validate against SSRF and private networks
+        is_safe, error_msg = is_safe_external_url(target_url)
+        if not is_safe:
+            return f"Security Error: {error_msg}"
+
+        # 3. External URL: Use unauthenticated client (never leak credentials)
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as unauth_client:
+                resp = await unauth_client.get(target_url)
+                if resp.status_code == 200:
+                    return resp.text
+                return f"Failed to fetch logs: HTTP {resp.status_code}"
+        except Exception as exc:
+            return f"Error retrieving logs from external URL {target_url}: {exc}"
+
     async def find_pr_for_commit(self, repo: str, sha: str) -> int | None:
         """Find the open pull request number associated with a commit SHA."""
-        async with self._get_client() as client:
-            try:
-                resp = await client.get(
-                    f"/api/v1/repos/{repo}/pulls",
-                    params={"state": "open", "limit": 50},
-                )
-                if resp.status_code == 200:
-                    pulls = resp.json()
-                    if isinstance(pulls, list):
-                        for pr in pulls:
-                            head_sha = pr.get("head", {}).get("sha", "")
-                            if head_sha == sha:
-                                return pr.get("number")
-            except httpx.HTTPError:
-                pass
+        client = self._get_client()
+        try:
+            resp = await client.get(
+                f"/api/v1/repos/{repo}/pulls",
+                params={"state": "open", "limit": 50},
+            )
+            if resp.status_code == 200:
+                pulls = resp.json()
+                if isinstance(pulls, list):
+                    for pr in pulls:
+                        head_sha = pr.get("head", {}).get("sha", "")
+                        if head_sha == sha:
+                            return pr.get("number")
+        except httpx.HTTPError:
+            pass
         return None

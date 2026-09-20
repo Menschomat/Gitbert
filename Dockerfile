@@ -55,5 +55,5 @@ USER appuser
 
 EXPOSE 8080
 
-# Default command: launch the ADK API server with Web UI
-CMD ["adk", "api_server", ".", "--host", "0.0.0.0", "--port", "8080", "--with_ui"]
+# Default command: launch the Gitbert webhook server
+CMD ["python", "main.py", "server"]

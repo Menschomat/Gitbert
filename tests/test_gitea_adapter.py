@@ -444,6 +444,68 @@ async def test_get_action_log(gitea_adapter):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_get_action_log_relative_url(gitea_adapter):
+    """Verify relative log URLs are resolved against Gitea base_url."""
+    respx.get("https://gitea.example.com/owner/repo/actions/1/logs").mock(
+        return_value=Response(200, text="Build passed successfully.")
+    )
+    log = await gitea_adapter.get_action_log("owner/repo", "/owner/repo/actions/1/logs")
+    assert "Build passed successfully." in log
+
+
+@pytest.mark.asyncio
+async def test_get_action_log_ssrf_blocked_metadata(gitea_adapter):
+    """Verify SSRF attempt to AWS metadata endpoint is blocked."""
+    log = await gitea_adapter.get_action_log(
+        "owner/repo", "http://169.254.169.254/latest/meta-data/"
+    )
+    assert "Security Error:" in log
+    assert "forbidden" in log.lower() or "restricted" in log.lower()
+
+
+@pytest.mark.asyncio
+async def test_get_action_log_ssrf_blocked_private_ips(gitea_adapter):
+    """Verify SSRF attempts to private networks are blocked."""
+    for ip in [
+        "http://10.0.0.1/admin",
+        "http://192.168.1.1/internal",
+        "http://127.0.0.1:8080/",
+    ]:
+        log = await gitea_adapter.get_action_log("owner/repo", ip)
+        assert "Security Error:" in log, f"Expected {ip} to be blocked"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_action_log_external_safe_url_strips_auth_token(gitea_adapter):
+    """Verify external logs are fetched without sending Gitea credentials."""
+    route = respx.get("https://public-ci.example.org/job-42.log").mock(
+        return_value=Response(200, text="Remote external log content.")
+    )
+    log = await gitea_adapter.get_action_log(
+        "owner/repo", "https://public-ci.example.org/job-42.log"
+    )
+    assert "Remote external log content." in log
+    # Verify Gitea token was NOT sent to the external host
+    assert route.called
+    request = route.calls.last.request
+    assert "Authorization" not in request.headers
+
+
+@pytest.mark.asyncio
+async def test_gitea_adapter_connection_reuse_and_aclose():
+    """Verify client reuse across calls and clean shutdown with aclose."""
+    adapter = GiteaAdapter(base_url="https://gitea.example.com")
+    client1 = adapter._get_client()
+    client2 = adapter._get_client()
+    assert client1 is client2  # Connection pooling / client reuse
+    assert not client1.is_closed
+    await adapter.aclose()
+    assert client1.is_closed
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_find_pr_for_commit(gitea_adapter):
     """Verify finding open PR matching commit head SHA."""
     respx.get("https://gitea.example.com/api/v1/repos/owner/repo/pulls").mock(

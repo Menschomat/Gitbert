@@ -110,7 +110,7 @@ class ReviewEngine:
                     f"{REVIEWER_SYSTEM_INSTRUCTION}"
                 )
                 response = await litellm.acompletion(
-                    model=self.settings.openai_compatible_model,
+                    model=self.settings.litellm_model_name,
                     messages=[{"role": "user", "content": prompt}],
                     api_key=api_key,
                     api_base=self.settings.openai_compatible_api_base,
@@ -269,7 +269,7 @@ class ReviewEngine:
                     f"{COMMENT_RESPONDER_INSTRUCTION}"
                 )
                 res = await litellm.acompletion(
-                    model=self.settings.openai_compatible_model,
+                    model=self.settings.litellm_model_name,
                     messages=[{"role": "user", "content": prompt}],
                     api_key=api_key,
                     api_base=self.settings.openai_compatible_api_base,
@@ -363,7 +363,7 @@ class ReviewEngine:
                     f"{ACTION_DIAGNOSTIC_INSTRUCTION}"
                 )
                 res = await litellm.acompletion(
-                    model=self.settings.openai_compatible_model,
+                    model=self.settings.litellm_model_name,
                     messages=[{"role": "user", "content": prompt}],
                     api_key=api_key,
                     api_base=self.settings.openai_compatible_api_base,

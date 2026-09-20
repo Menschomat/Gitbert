@@ -169,7 +169,7 @@ class Settings(BaseSettings):
         description="API key for OpenAI-compatible endpoint (e.g. OpenRouter)",
     )
     openai_compatible_model: str = Field(
-        default="openrouter/anthropic/claude-3.5-sonnet",
+        default="deepseek/deepseek-v4.1-flash",
         description="Model identifier for LiteLLM / OpenAI-compatible provider",
     )
     openai_compatible_api_base: str = Field(
@@ -210,6 +210,18 @@ class Settings(BaseSettings):
         combined_values = {**file_values, **values}
         super().__init__(_env_file=_env_file, **combined_values)
 
+    @property
+    def litellm_model_name(self) -> str:
+        """Resolve model name formatted appropriately for LiteLLM routing."""
+        model = self.openai_compatible_model
+        if (
+            self.openai_compatible_api_base
+            and "openrouter.ai" in self.openai_compatible_api_base
+            and not model.startswith("openrouter/")
+        ):
+            return f"openrouter/{model}"
+        return model
+
     def get_adk_model(self) -> Any:
         """Return ADK model (str for Gemini, or LiteLlm wrapper for LiteLLM)."""
         if self.model_provider == ModelProvider.LITELLM:
@@ -221,7 +233,7 @@ class Settings(BaseSettings):
                 else None
             )
             return LiteLlm(
-                model=self.openai_compatible_model,
+                model=self.litellm_model_name,
                 api_key=api_key,
                 api_base=self.openai_compatible_api_base,
             )

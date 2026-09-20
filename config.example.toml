@@ -23,7 +23,7 @@ model_name = "gemini-3.8-flash"
 # google_api_key = "your-gemini-api-key"
 
 # Agnostic OpenAI-compatible / OpenRouter / vLLM options (when model_provider = "litellm")
-openai_compatible_model = "openrouter/anthropic/claude-3.5-sonnet"
+openai_compatible_model = "deepseek/deepseek-v4.1-flash"
 openai_compatible_api_base = "https://openrouter.ai/api/v1"
 # openai_compatible_api_key = "your-openrouter-api-key"
 

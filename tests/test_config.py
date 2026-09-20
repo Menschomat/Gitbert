@@ -132,6 +132,8 @@ def test_model_provider_settings_default_and_override(monkeypatch):
     assert settings.model_provider == ModelProvider.GEMINI
     assert settings.model_name == "gemini-3.8-flash"
     assert settings.get_adk_model() == "gemini-3.8-flash"
+    assert settings.openai_compatible_model == "deepseek/deepseek-v4.1-flash"
+    assert settings.litellm_model_name == "openrouter/deepseek/deepseek-v4.1-flash"
 
     # Env overrides
     monkeypatch.setenv("MODEL_PROVIDER", "litellm")

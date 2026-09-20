@@ -401,7 +401,9 @@ class ReviewEngine:
             return
 
         statuses = await self.platform.get_commit_statuses(event.repo, event.head_sha)
-        external = [s for s in statuses if not s.context.startswith("git-bot/")]
+        external = [
+            s for s in statuses if not s.context.startswith(("gitbert/", "git-bot/"))
+        ]
 
         # If any check is still pending, wait
         if any(s.state == CommitState.PENDING for s in external):
@@ -451,7 +453,7 @@ class ReviewEngine:
             fail_status = CommitStatus(
                 state=CommitState.FAILURE,
                 description=f"CI Action failed: {failed.context}",
-                context="git-bot/pr-review",
+                context="gitbert/pr-review",
             )
             await self.platform.set_commit_status(
                 event.repo, event.head_sha, fail_status
@@ -463,7 +465,7 @@ class ReviewEngine:
                 final_status = CommitStatus(
                     state=CommitState.SUCCESS,
                     description="All code reviews and CI checks passed!",
-                    context="git-bot/pr-review",
+                    context="gitbert/pr-review",
                 )
                 await self.platform.set_commit_status(
                     event.repo, event.head_sha, final_status
@@ -510,7 +512,7 @@ class ReviewEngine:
         pending_status = CommitStatus(
             state=CommitState.PENDING,
             description="AI Code Review in progress...",
-            context="git-bot/pr-review",
+            context="gitbert/pr-review",
         )
         await self.platform.set_commit_status(
             event.repo, event.head_sha, pending_status
@@ -541,7 +543,9 @@ class ReviewEngine:
 
         # 5. Check if external CI actions are currently running
         statuses = await self.platform.get_commit_statuses(event.repo, event.head_sha)
-        external = [s for s in statuses if not s.context.startswith("git-bot/")]
+        external = [
+            s for s in statuses if not s.context.startswith(("gitbert/", "git-bot/"))
+        ]
         has_pending = any(s.state == CommitState.PENDING for s in external)
 
         if has_pending and self.settings.await_actions_completion:
@@ -562,7 +566,7 @@ class ReviewEngine:
             hold_status = CommitStatus(
                 state=CommitState.PENDING,
                 description="Code review complete; awaiting CI Actions...",
-                context="git-bot/pr-review",
+                context="gitbert/pr-review",
             )
             await self.platform.set_commit_status(
                 event.repo, event.head_sha, hold_status

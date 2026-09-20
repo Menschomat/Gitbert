@@ -10,6 +10,7 @@ Hierarchy (highest priority first):
 
 import argparse
 import os
+import sys
 import tomllib
 from enum import StrEnum
 from pathlib import Path
@@ -27,52 +28,94 @@ class ReviewMode(StrEnum):
 
 
 class CommentTriggerMode(StrEnum):
-    """Trigger mode for answering PR comments."""
+    """Trigger mode for comment responses."""
 
-    MENTION_ONLY = "mention_only"  # Option A: only replies if explicitly mentioned
-    AUTONOMOUS = "autonomous"  # Option B: default, evaluates any comment
+    AUTONOMOUS = "autonomous"
+    MENTION_ONLY = "mention_only"
 
 
 class ModelProvider(StrEnum):
-    """LLM provider architecture."""
+    """Supported LLM providers."""
 
     GEMINI = "gemini"
     LITELLM = "litellm"
 
 
-def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
-    """Parse known CLI arguments for configuration overrides."""
-    if args is None:
-        return {}
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--host", type=str)
-    parser.add_argument("--port", type=int)
-    parser.add_argument("--max-concurrent-reviews", type=int)
-    parser.add_argument("--review-mode", type=str)
-    parser.add_argument("--comment-trigger-mode", type=str)
+def create_cli_parser(add_help: bool = False) -> argparse.ArgumentParser:
+    """Construct argument parser containing all Gitbert configuration flags."""
+    parser = argparse.ArgumentParser(add_help=add_help)
+    parser.add_argument("--host", type=str, help="Binding host for webhook server")
+    parser.add_argument("--port", type=int, help="Binding port for webhook server")
+    parser.add_argument(
+        "--max-concurrent-reviews", type=int, help="Max simultaneous reviews"
+    )
+    parser.add_argument(
+        "--review-mode",
+        type=str,
+        choices=["advisory", "enforcing"],
+        help="Operational review mode",
+    )
+    parser.add_argument(
+        "--comment-trigger-mode",
+        type=str,
+        choices=["autonomous", "mention_only"],
+        help="Comment response mode",
+    )
     parser.add_argument(
         "--await-actions-completion",
         action=argparse.BooleanOptionalAction,
         default=None,
+        help="Wait for CI Actions before final approval",
     )
     parser.add_argument(
         "--diagnose-action-failures",
         action=argparse.BooleanOptionalAction,
         default=None,
+        help="Diagnose failed Action logs",
     )
-    parser.add_argument("--bot-name", type=str)
-    parser.add_argument("--model-provider", type=str)
-    parser.add_argument("--model-name", type=str)
-    parser.add_argument("--openai-compatible-api-key", type=str)
-    parser.add_argument("--openai-compatible-model", type=str)
-    parser.add_argument("--openai-compatible-api-base", type=str)
-    parser.add_argument("--gitea-url", type=str)
-    parser.add_argument("--gitea-token", type=str)
-    parser.add_argument("--gitea-webhook-secret", type=str)
-    parser.add_argument("--redis-url", type=str)
-    parser.add_argument("--cache-ttl-seconds", type=int)
-    parser.add_argument("--config", type=str, dest="config_file")
+    parser.add_argument("--bot-name", type=str, help="Bot username in Gitea")
+    parser.add_argument(
+        "--model-provider",
+        type=str,
+        choices=["gemini", "litellm"],
+        help="LLM provider: gemini or litellm",
+    )
+    parser.add_argument("--model-name", type=str, help="Gemini model name")
+    parser.add_argument(
+        "--openai-compatible-api-key",
+        type=str,
+        help="API key for LiteLLM/OpenRouter",
+    )
+    parser.add_argument(
+        "--openai-compatible-model",
+        type=str,
+        help="Model identifier for LiteLLM/OpenRouter",
+    )
+    parser.add_argument(
+        "--openai-compatible-api-base",
+        type=str,
+        help="API base URL for LiteLLM/OpenRouter",
+    )
+    parser.add_argument("--gitea-url", type=str, help="Base URL of Gitea instance")
+    parser.add_argument("--gitea-token", type=str, help="Scoped Gitea API access token")
+    parser.add_argument(
+        "--gitea-webhook-secret", type=str, help="HMAC-SHA256 webhook secret"
+    )
+    parser.add_argument("--redis-url", type=str, help="Valkey or Redis connection URL")
+    parser.add_argument(
+        "--cache-ttl-seconds", type=int, help="TTL for cached reviews in seconds"
+    )
+    parser.add_argument(
+        "--config", type=str, dest="config_file", help="Path to config TOML file"
+    )
+    return parser
 
+
+def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
+    """Parse known CLI arguments for configuration overrides."""
+    if args is None:
+        args = sys.argv[1:]
+    parser = create_cli_parser(add_help=False)
     parsed, _ = parser.parse_known_args(args)
     return {k: v for k, v in vars(parsed).items() if v is not None}
 

@@ -109,7 +109,7 @@ class GiteaAdapter(ICodePlatform):
         if self._client is None or self._client.is_closed:
             headers = {
                 "Accept": "application/json",
-                "User-Agent": f"{self.bot_name}-Reviewer/1.0",
+                "User-Agent": "Gitbert-Reviewer/1.0",
             }
             if self.token:
                 headers["Authorization"] = f"token {self.token.get_secret_value()}"
@@ -255,8 +255,8 @@ class GiteaAdapter(ICodePlatform):
         # 4. Commit Status events (from CI / Gitea Actions)
         if event_name == "status":
             context = payload.get("context", "")
-            # Loop protection: Ignore status events published by git_bot itself
-            if context.startswith("git-bot/"):
+            # Loop protection: Ignore status events published by Gitbert itself
+            if context.startswith(("gitbert/", "git-bot/")):
                 return PRReviewEvent(
                     event_type=EventType.IGNORED,
                     platform="gitea",

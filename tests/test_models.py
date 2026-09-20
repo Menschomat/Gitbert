@@ -15,7 +15,7 @@ def test_commit_status_validation():
         description="All checks passed",
     )
     assert status.state == CommitState.SUCCESS
-    assert status.context == "git-bot/pr-review"
+    assert status.context == "gitbert/pr-review"
     assert status.description == "All checks passed"
 
 

@@ -53,7 +53,7 @@ class ReviewPublisher:
         commit_status = CommitStatus(
             state=commit_state,
             description=status_desc,
-            context="git-bot/pr-review",
+            context="gitbert/pr-review",
         )
         await self.platform.set_commit_status(repo, head_sha, commit_status)
 

@@ -8,33 +8,49 @@ Commands:
 
 import argparse
 import asyncio
+from typing import Any
 
-from gitbert.config import get_settings
+from gitbert.config import create_cli_parser, get_settings
 from gitbert.models.events import EventType, PRReviewEvent
 from gitbert.orchestrator.engine import ReviewEngine
 from gitbert.platforms.factory import get_platform_adapter
+from gitbert.server import create_app
 
 
 def run_server(args: argparse.Namespace) -> None:
     """Launch the webhook receiver with Uvicorn."""
     import uvicorn
 
-    settings = get_settings()
-    host = args.host or settings.host
-    port = args.port or settings.port
+    cli_overrides = {
+        k: v for k, v in vars(args).items() if v is not None and k not in ("command",)
+    }
+    settings = get_settings(**cli_overrides)
+    host = settings.host
+    port = settings.port
 
     print("=" * 60)
     print(f"Starting Gitbert Webhook Server on {host}:{port}")
     print(f"Operational Mode:   {settings.review_mode.value.upper()}")
     print(f"Max Concurrency:    {settings.max_concurrent_reviews}")
     print(f"Target Gitea URL:   {settings.gitea_url}")
+    if settings.redis_url:
+        print(f"Cache Backend:      Redis/Valkey ({settings.redis_url})")
+    else:
+        print("Cache Backend:      In-Memory (TTL)")
     print("=" * 60)
-    uvicorn.run("gitbert.server:app", host=host, port=port, reload=False)
+
+    app = create_app(app_settings=settings)
+    uvicorn.run(app, host=host, port=port, reload=False)
 
 
-async def run_review_async(repo: str, pr_number: int, platform_name: str) -> None:
+async def run_review_async(
+    repo: str,
+    pr_number: int,
+    platform_name: str,
+    **overrides: Any,
+) -> None:
     """Run an on-demand PR review."""
-    settings = get_settings()
+    settings = get_settings(**overrides)
     platform = get_platform_adapter(platform_name, settings)
     engine = ReviewEngine(platform=platform, app_settings=settings)
 
@@ -68,12 +84,22 @@ async def run_review_async(repo: str, pr_number: int, platform_name: str) -> Non
 
 def run_review(args: argparse.Namespace) -> None:
     """Entry point for manual PR review."""
-    asyncio.run(run_review_async(args.repo, args.pr, args.platform))
+    cli_overrides = {
+        k: v
+        for k, v in vars(args).items()
+        if v is not None and k not in ("command", "repo", "pr", "platform")
+    }
+    asyncio.run(run_review_async(args.repo, args.pr, args.platform, **cli_overrides))
 
 
-def print_info() -> None:
+def print_info(args: argparse.Namespace | None = None) -> None:
     """Print current configuration status."""
-    settings = get_settings()
+    cli_overrides = (
+        {k: v for k, v in vars(args).items() if v is not None and k not in ("command",)}
+        if args
+        else {}
+    )
+    settings = get_settings(**cli_overrides)
     token_status = "[Configured]" if settings.gitea_token else "[Unset]"
     wh_status = "[Configured]" if settings.gitea_webhook_secret else "[Unset]"
     key_status = "[Configured]" if settings.google_api_key else "[Unset]"
@@ -102,6 +128,10 @@ def print_info() -> None:
     print(f"Gitea URL:         {settings.gitea_url}")
     print(f"Gitea Token:       {token_status}")
     print(f"Webhook Secret:    {wh_status}")
+    if settings.redis_url:
+        print(f"Cache Backend:     Redis/Valkey ({settings.redis_url})")
+    else:
+        print("Cache Backend:     In-Memory (TTL)")
     print("=" * 60)
     print("\nAvailable Commands:")
     print("  python main.py server                      # Start webhook listener")
@@ -111,16 +141,23 @@ def print_info() -> None:
 
 def main() -> None:
     """CLI routing entrypoint."""
+    common_parser = create_cli_parser(add_help=False)
     parser = argparse.ArgumentParser(description="Gitbert PR Reviewer CLI")
     subparsers = parser.add_subparsers(dest="command")
 
-    # Server command
-    server_parser = subparsers.add_parser("server", help="Start the webhook server")
-    server_parser.add_argument("--host", type=str, help="Binding host")
-    server_parser.add_argument("--port", type=int, help="Binding port")
+    # Server command inherits all configuration flags
+    subparsers.add_parser(
+        "server",
+        help="Start the webhook server",
+        parents=[common_parser],
+    )
 
-    # Review command
-    review_parser = subparsers.add_parser("review", help="Run review on a PR")
+    # Review command inherits all configuration flags
+    review_parser = subparsers.add_parser(
+        "review",
+        help="Run review on a PR",
+        parents=[common_parser],
+    )
     review_parser.add_argument(
         "--repo", type=str, required=True, help="Repository in owner/repo format"
     )
@@ -131,6 +168,13 @@ def main() -> None:
         "--platform", type=str, default="gitea", help="Platform (default: gitea)"
     )
 
+    # Info command
+    subparsers.add_parser(
+        "info",
+        help="Inspect configuration status",
+        parents=[common_parser],
+    )
+
     args = parser.parse_args()
 
     if args.command == "server":
@@ -138,7 +182,7 @@ def main() -> None:
     elif args.command == "review":
         run_review(args)
     else:
-        print_info()
+        print_info(args)
 
 
 if __name__ == "__main__":

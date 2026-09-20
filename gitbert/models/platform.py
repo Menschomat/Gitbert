@@ -19,7 +19,7 @@ class CommitStatus(BaseModel):
 
     state: CommitState
     description: str
-    context: str = Field(default="git-bot/pr-review")
+    context: str = Field(default="gitbert/pr-review")
     target_url: str | None = None
 
 

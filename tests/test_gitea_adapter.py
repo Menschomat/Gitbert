@@ -377,16 +377,30 @@ def test_parse_status_event(gitea_adapter):
 def test_parse_status_event_loop_prevention(gitea_adapter):
     """Verify bot's own commit statuses are ignored to prevent loops."""
     headers = {"X-Gitea-Event": "status"}
+
+    # Modern gitbert context
     payload = {
         "sha": "head-sha-777",
         "state": "success",
-        "context": "git-bot/pr-review",  # Published by git_bot!
+        "context": "gitbert/pr-review",
         "repository": {"full_name": "owner/repo"},
         "sender": {"username": "git_bot"},
     }
     event = gitea_adapter.parse_event(headers, payload)
     assert event is not None
     assert event.event_type == EventType.IGNORED
+
+    # Legacy git-bot context
+    legacy_payload = {
+        "sha": "head-sha-777",
+        "state": "success",
+        "context": "git-bot/pr-review",
+        "repository": {"full_name": "owner/repo"},
+        "sender": {"username": "git_bot"},
+    }
+    legacy_event = gitea_adapter.parse_event(headers, legacy_payload)
+    assert legacy_event is not None
+    assert legacy_event.event_type == EventType.IGNORED
 
 
 @pytest.mark.asyncio

@@ -60,7 +60,7 @@ sequenceDiagram
     Receiver-->>Platform: 202 Accepted (Instant Acknowledgment)
 
     Receiver->>Engine: Dispatch Background Review Task
-    Engine->>Platform: POST /statuses (git-bot/pr-review: PENDING)
+    Engine->>Platform: POST /statuses (gitbert/pr-review: PENDING)
     Engine->>Platform: GET /pulls/{id} (Fetch Metadata & Modified Files)
     Engine->>Engine: Build ScopedMRContext & File Allowlist
 
@@ -72,7 +72,7 @@ sequenceDiagram
     Agent-->>Publisher: Output Structured Verdict
     Publisher->>Publisher: Validate Line Numbers & Apply Advisory/Enforcing Mode
     Publisher->>Platform: POST /pulls/{id}/reviews (Summary & Inline Comments)
-    Publisher->>Platform: POST /statuses (git-bot/pr-review: SUCCESS / FAILURE)
+    Publisher->>Platform: POST /statuses (gitbert/pr-review: SUCCESS / FAILURE)
 ```
 
 ---
@@ -101,13 +101,19 @@ gitbert/
 │   └── workflows/
 │       └── ci.yaml              # Multi-version CI matrix (3.12, 3.13, 3.14) + GHCR deployment
 ├── gitbert/
-│   ├── __init__.py              # Package exports (root_agent)
+│   ├── __init__.py              # Package exports (build_reviewer_agent)
 │   ├── config.py                # Tiered configuration (CLI, Env, TOML, Defaults)
 │   ├── server.py                # FastAPI webhook receiver & health checks
 │   ├── agent/                   # Google ADK 2.0 Agent setup
 │   │   ├── __init__.py
 │   │   ├── prompts.py           # Senior engineer review rubrics & prompt templates
 │   │   └── reviewer.py          # Dynamic scoped agent factory
+│   ├── cache/                   # Pluggable caching layer (In-Memory TTL & Valkey/Redis)
+│   │   ├── __init__.py
+│   │   ├── base.py              # ICacheProvider interface
+│   │   ├── factory.py           # get_cache_provider factory
+│   │   ├── memory.py           # Thread-safe in-memory cache with TTL
+│   │   └── redis.py            # Async Redis / Valkey cache backend
 │   ├── models/                  # Domain entities (Pydantic v2)
 │   │   ├── __init__.py
 │   │   ├── events.py            # Normalized webhook trigger events
@@ -121,16 +127,15 @@ gitbert/
 │   │   ├── __init__.py
 │   │   ├── base.py              # Abstract ICodePlatform interface
 │   │   ├── factory.py           # Platform adapter factory
-│   │   └── gitea.py             # Asynchronous Gitea API & Webhook client
+│   │   └── gitea.py             # Asynchronous Gitea API & Webhook client with connection pooling
 │   ├── security/                # Programmatic boundaries
 │   │   ├── __init__.py
 │   │   ├── context.py           # Immutable ScopedMRContext & file validator
 │   │   └── exceptions.py        # SecurityScopeViolationError
 │   └── tools/                   # Agent tools
 │       ├── __init__.py
-│       ├── scoped_review_tools.py # Per-invocation locked review tools
-│       └── time_tool.py         # Baseline tool
-├── tests/                       # 66 automated unit & integration tests
+│       └── scoped_review_tools.py # Per-invocation locked review tools
+├── tests/                       # 82 automated unit & integration tests
 ├── config.example.toml          # Template TOML configuration file
 ├── Dockerfile                   # Multi-stage, non-root Python 3.14 container
 ├── main.py                      # Unified CLI entrypoint (server, review, info)
@@ -168,13 +173,27 @@ cp .env.example .env
 cp config.example.toml config.toml
 ```
 
-**Minimal required settings**:
+**Minimal required settings (Gemini)**:
 ```env
+MODEL_PROVIDER="gemini"
 GOOGLE_API_KEY="your-gemini-api-key"
 GITEA_URL="https://gitea.example.com"
 GITEA_TOKEN="your-gitea-access-token"
 GITEA_WEBHOOK_SECRET="your-shared-webhook-secret"
 REVIEW_MODE="advisory" # or "enforcing"
+```
+
+**Alternative settings (OpenRouter / LiteLLM & Redis/Valkey Cache)**:
+```env
+MODEL_PROVIDER="litellm"
+OPENAI_COMPATIBLE_API_KEY="sk-or-v1-..."
+OPENAI_COMPATIBLE_MODEL="deepseek/deepseek-v4.1-flash"
+OPENAI_COMPATIBLE_API_BASE="https://openrouter.ai/api/v1"
+REDIS_URL="redis://localhost:6379/0" # Valkey or Redis (defaults to in-memory TTL if unset)
+CACHE_TTL_SECONDS="3600"
+GITEA_URL="https://gitea.example.com"
+GITEA_TOKEN="your-gitea-access-token"
+GITEA_WEBHOOK_SECRET="your-shared-webhook-secret"
 ```
 
 ---
@@ -188,7 +207,7 @@ Run the high-performance async webhook listener:
 uv run python main.py server --port 8080
 
 # Or directly with Uvicorn
-uv run uvicorn git_bot.server:app --host 0.0.0.0 --port 8080
+uv run uvicorn gitbert.server:app --host 0.0.0.0 --port 8080
 ```
 
 ### B. Run an On-Demand PR Review (CLI)
@@ -200,20 +219,24 @@ uv run python main.py review --repo "myorg/backend" --pr 12
 ### C. Inspect Configuration Status
 ```bash
 uv run python main.py
+# or
+uv run python main.py info
 ```
 
 Output:
 ```text
 ============================================================
-git_bot - Multi-Platform PR Review Agent (ADK 2.0)
+Gitbert - Multi-Platform PR Review Agent (ADK 2.0)
 ============================================================
 Bot Name:          git_bot
 Review Mode:       ADVISORY
+Provider:          GEMINI
 Model:             gemini-3.8-flash
 Gitea URL:         https://gitea.example.com
 Gitea Token:       [Configured]
 Webhook Secret:    [Configured]
 Google API Key:    [Configured]
+Cache Backend:     In-Memory (TTL)
 ============================================================
 ```
 
@@ -276,8 +299,14 @@ Health check is available at `http://localhost:8080/healthz`.
 | `await_actions_completion` | `--await-actions-completion` | `AWAIT_ACTIONS_COMPLETION` | `true` | Wait for running CI actions before final approval verdict |
 | `diagnose_action_failures` | `--diagnose-action-failures` | `DIAGNOSE_ACTION_FAILURES` | `true` | Autonomously diagnose failed Action logs and post fixes |
 | `bot_name` | `--bot-name` | `BOT_NAME` | `git_bot` | Name of the bot user displayed in Gitea |
+| `model_provider` | `--model-provider` | `MODEL_PROVIDER` | `gemini` | Model provider: `gemini` or `litellm` |
 | `model_name` | `--model-name` | `MODEL_NAME` | `gemini-3.8-flash` | Gemini model used for reasoning |
 | `google_api_key` | — | `GOOGLE_API_KEY` | `None` | Google Gemini API credentials |
+| `openai_compatible_api_key` | `--openai-compatible-api-key` | `OPENAI_COMPATIBLE_API_KEY` | `None` | API key for LiteLLM / OpenRouter |
+| `openai_compatible_model` | `--openai-compatible-model` | `OPENAI_COMPATIBLE_MODEL` | `deepseek/deepseek-v4.1-flash` | Model identifier for LiteLLM / OpenRouter |
+| `openai_compatible_api_base` | `--openai-compatible-api-base` | `OPENAI_COMPATIBLE_API_BASE` | `None` | Custom API base URL for LiteLLM / OpenRouter |
+| `redis_url` | `--redis-url` | `REDIS_URL` | `None` | Valkey or Redis connection URL (defaults to in-memory TTL if unset) |
+| `cache_ttl_seconds` | `--cache-ttl-seconds` | `CACHE_TTL_SECONDS` | `3600` | Expiration time for cached reviews in seconds |
 | `gitea_url` | `--gitea-url` | `GITEA_URL` | `http://localhost:3000` | Base URL of your Gitea instance |
 | `gitea_token` | `--gitea-token` | `GITEA_TOKEN` | `None` | Scoped API access token |
 | `gitea_webhook_secret` | `--gitea-webhook-secret` | `GITEA_WEBHOOK_SECRET` | `None` | HMAC-SHA256 signature secret |

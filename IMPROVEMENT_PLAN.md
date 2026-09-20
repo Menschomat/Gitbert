@@ -50,35 +50,36 @@ Bei der Tiefenprüfung sind **fünf Kernpunkte** aufgefallen:
 
 ```mermaid
 flowchart TD
-    subgraph Phase 1: Sicherheit & Betriebsbereitschaft (Top-Priorität)
+    subgraph Phase 1: Sicherheit & Betriebsbereitschaft [Phase 1: Erledigt & Verifiziert]
         P1_1["SSRF & Token-Leak-Schutz in get_action_log"]
         P1_2["Dockerfile Entrypoint reparieren (main.py server)"]
         P1_3["HTTP-Client Connection-Pooling"]
         P1_4["Commit-Status Failure-Recovery bei Crash"]
     end
 
-    subgraph Phase 2: Valkey / Redis Pluggable Cache
+    subgraph Phase 2: Valkey / Redis Pluggable Cache [Phase 2: Erledigt & Verifiziert]
         P2_1["Cache-Schnittstelle (ICacheProvider)"]
         P2_2["Redis / Valkey Provider via REDIS_URL"]
         P2_3["In-Memory Provider mit TTL als Fallback"]
         P2_4["ReviewEngine an ICacheProvider anbinden"]
     end
 
-    subgraph Phase 3: CLI & Namenskonsistenz
+    subgraph Phase 3: CLI & Namenskonsistenz [Phase 3: Erledigt & Verifiziert]
         P3_1["Alle Settings-Optionen als CLI-Flags in main.py"]
         P3_2["Status-Context auf gitbert/pr-review vereinheitlichen"]
         P3_3["User-Agent auf Gitbert-Reviewer/1.0 anpassen"]
     end
 
-    subgraph Phase 4: Architektur & Toter Code
+    subgraph Phase 4: Architektur & Toter Code [Phase 4: Erledigt & Verifiziert]
         P4_1["ReviewEngine und System-Prompt harmonisieren"]
         P4_2["Toten Code entfernen (time_tool.py, root_agent)"]
     end
 
-    subgraph Phase 5: Test-Härtung
+    subgraph Phase 5: Test-Härtung & Dokumentation [Phase 5: Erledigt & Verifiziert]
         P5_1["SSRF-Sicherheitstests für get_action_log"]
         P5_2["Valkey/Redis & Cache-Unit-Tests"]
         P5_3["Mock-Setup in test_webhook_server.py reparieren"]
+        P5_4["README & Konfigurationsdokumentation aktualisiert"]
     end
 
     Phase 1 --> Phase 2

@@ -68,7 +68,7 @@ def create_app(
                     try:
                         from gitbert.models.platform import CommitState, CommitStatus
 
-                        status_context = f"{cfg.bot_name.lower()}/pr-review"
+                        status_context = "gitbert/pr-review"
                         fail_status = CommitStatus(
                             state=CommitState.FAILURE,
                             description="AI Review encountered an internal error.",
@@ -102,7 +102,9 @@ def create_app(
         try:
             payload = json.loads(raw_body)
         except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Malformed JSON payload")
+            raise HTTPException(
+                status_code=400, detail="Malformed JSON payload"
+            ) from None
 
         # 3. Parse domain event
         event = plat.parse_event(headers, payload)

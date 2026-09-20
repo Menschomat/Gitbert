@@ -164,6 +164,76 @@ class ReviewEngine:
             inline_comments=[],
         )
 
+    async def _build_comment_prompt(
+        self, event: PRReviewEvent, comment_body: str
+    ) -> str:
+        """Construct prompt with conversation history for comment responder."""
+        prior_comments = await self.platform.get_pr_comments(
+            event.repo, event.pr_number
+        )
+        comments_snippet = "\n".join(
+            f"- [{c.author}] ({'BOT' if c.is_bot else 'USER'}): {c.body[:200]}"
+            for c in prior_comments[-5:]
+        )
+        return (
+            f"A developer commented on PR #{event.pr_number} "
+            f"in repo '{event.repo}'.\n\n"
+            f'New Comment by @{event.sender}:\n"{comment_body}"\n\n'
+            f"Recent Conversation History:\n{comments_snippet}\n\n"
+            f"{COMMENT_RESPONDER_INSTRUCTION}"
+        )
+
+    async def _evaluate_comment_gemini(self, prompt: str) -> CommentResponse | None:
+        """Evaluate comment response via Google Gemini."""
+        try:
+            from google import genai
+
+            if not self.settings.google_api_key:
+                return None
+
+            client = genai.Client(
+                api_key=self.settings.google_api_key.get_secret_value()
+            )
+            res = client.models.generate_content(
+                model=self.settings.model_name,
+                contents=prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": CommentResponse,
+                },
+            )
+            if res.text:
+                parsed = json.loads(res.text)
+                return CommentResponse.model_validate(parsed)
+        except Exception as exc:
+            logger.warning("Failed to evaluate comment via Gemini: %s", exc)
+        return None
+
+    async def _evaluate_comment_litellm(self, prompt: str) -> CommentResponse | None:
+        """Evaluate comment response via LiteLLM / OpenAI-compatible endpoint."""
+        try:
+            import litellm
+
+            api_key = (
+                self.settings.openai_compatible_api_key.get_secret_value()
+                if self.settings.openai_compatible_api_key
+                else None
+            )
+            res = await litellm.acompletion(
+                model=self.settings.litellm_model_name,
+                messages=[{"role": "user", "content": prompt}],
+                api_key=api_key,
+                api_base=self.settings.openai_compatible_api_base,
+                response_format={"type": "json_object"},
+            )
+            content = res.choices[0].message.content
+            if content:
+                parsed = json.loads(content)
+                return CommentResponse.model_validate(parsed)
+        except Exception as exc:
+            logger.warning("Failed to evaluate comment via LiteLLM: %s", exc)
+        return None
+
     async def evaluate_and_reply_comment(
         self, event: PRReviewEvent
     ) -> CommentResponse | None:
@@ -201,96 +271,26 @@ class ReviewEngine:
                 )
             return response
 
-        # 1. Native Gemini evaluation
+        # LLM evaluation (Gemini or LiteLLM)
+        decision: CommentResponse | None = None
         if (
             self.settings.model_provider == ModelProvider.GEMINI
             and self.settings.google_api_key
         ):
-            try:
-                from google import genai
-
-                client = genai.Client(
-                    api_key=self.settings.google_api_key.get_secret_value()
-                )
-                prior_comments = await self.platform.get_pr_comments(
-                    event.repo, event.pr_number
-                )
-                comments_snippet = "\n".join(
-                    f"- [{c.author}] ({'BOT' if c.is_bot else 'USER'}): {c.body[:200]}"
-                    for c in prior_comments[-5:]
-                )
-
-                prompt = (
-                    f"A developer commented on PR #{event.pr_number} "
-                    f"in repo '{event.repo}'.\n\n"
-                    f'New Comment by @{event.sender}:\n"{comment_body}"\n\n'
-                    f"Recent Conversation History:\n{comments_snippet}\n\n"
-                    f"{COMMENT_RESPONDER_INSTRUCTION}"
-                )
-                res = client.models.generate_content(
-                    model=self.settings.model_name,
-                    contents=prompt,
-                    config={
-                        "response_mime_type": "application/json",
-                        "response_schema": CommentResponse,
-                    },
-                )
-                if res.text:
-                    parsed = json.loads(res.text)
-                    decision = CommentResponse.model_validate(parsed)
-                    if decision.should_reply and decision.reply:
-                        await self.platform.post_pr_comment(
-                            event.repo, event.pr_number, decision.reply
-                        )
-                    return decision
-            except Exception as exc:
-                logger.warning("Failed to evaluate comment via Gemini: %s", exc)
-
-        # 2. Agnostic LiteLLM / OpenAI-compatible evaluation
+            prompt = await self._build_comment_prompt(event, comment_body)
+            decision = await self._evaluate_comment_gemini(prompt)
         elif self.settings.model_provider == ModelProvider.LITELLM and (
             self.settings.openai_compatible_api_key
             or self.settings.openai_compatible_api_base
         ):
-            try:
-                import litellm
+            prompt = await self._build_comment_prompt(event, comment_body)
+            decision = await self._evaluate_comment_litellm(prompt)
 
-                api_key = (
-                    self.settings.openai_compatible_api_key.get_secret_value()
-                    if self.settings.openai_compatible_api_key
-                    else None
-                )
-                prior_comments = await self.platform.get_pr_comments(
-                    event.repo, event.pr_number
-                )
-                comments_snippet = "\n".join(
-                    f"- [{c.author}] ({'BOT' if c.is_bot else 'USER'}): {c.body[:200]}"
-                    for c in prior_comments[-5:]
-                )
-                prompt = (
-                    f"A developer commented on PR #{event.pr_number} "
-                    f"in repo '{event.repo}'.\n\n"
-                    f'New Comment by @{event.sender}:\n"{comment_body}"\n\n'
-                    f"Recent Conversation History:\n{comments_snippet}\n\n"
-                    f"{COMMENT_RESPONDER_INSTRUCTION}"
-                )
-                res = await litellm.acompletion(
-                    model=self.settings.litellm_model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    api_key=api_key,
-                    api_base=self.settings.openai_compatible_api_base,
-                    response_format={"type": "json_object"},
-                )
-                content = res.choices[0].message.content
-                if content:
-                    parsed = json.loads(content)
-                    decision = CommentResponse.model_validate(parsed)
-                    if decision.should_reply and decision.reply:
-                        await self.platform.post_pr_comment(
-                            event.repo, event.pr_number, decision.reply
-                        )
-                    return decision
-            except Exception as exc:
-                logger.warning("Failed to evaluate comment via LiteLLM: %s", exc)
+        if decision and decision.should_reply and decision.reply:
+            await self.platform.post_pr_comment(
+                event.repo, event.pr_number, decision.reply
+            )
+            return decision
 
         # Fallback / heuristic response when mentioned without external LLM
         if is_mentioned:
@@ -304,7 +304,9 @@ class ReviewEngine:
                 reply=fallback_reply,
                 reasoning="Direct mention fallback response.",
             )
-            await self.platform.post_pr_comment(event.repo, event.pr_number, resp.reply)
+            await self.platform.post_pr_comment(
+                event.repo, event.pr_number, fallback_reply
+            )
             return resp
 
         return None
@@ -387,14 +389,70 @@ class ReviewEngine:
             related_files=[],
         )
 
+    async def _handle_failed_ci_checks(
+        self,
+        event: PRReviewEvent,
+        pr_number: int,
+        failed: CommitStatus,
+        cache_key: str,
+    ) -> None:
+        """Diagnose and record a failed external CI action."""
+        if self.settings.diagnose_action_failures:
+            log_content = ""
+            if failed.target_url:
+                raw_log = await self.platform.get_action_log(
+                    event.repo, failed.target_url
+                )
+                max_chars = self.settings.max_action_log_chars
+                log_content = raw_log[-max_chars:] if raw_log else ""
+
+            diag = await self.diagnose_action_failure(
+                event.repo, pr_number, failed.context, log_content
+            )
+            if diag:
+                comment_body = (
+                    f"### ❌ CI Action Failed: `{diag.context}`\n\n"
+                    f"**Diagnosis**:\n{diag.diagnosis}\n\n"
+                    f"**Suggested Fix**:\n{diag.suggested_fix}"
+                )
+                await self.platform.post_pr_comment(event.repo, pr_number, comment_body)
+
+        fail_status = CommitStatus(
+            state=CommitState.FAILURE,
+            description=f"CI Action failed: {failed.context}",
+            context="gitbert/pr-review",
+        )
+        await self.platform.set_commit_status(event.repo, event.head_sha, fail_status)
+        await self.cache.delete(cache_key)
+
+    async def _handle_successful_ci_checks(
+        self,
+        event: PRReviewEvent,
+        pr_number: int,
+        cached_review: ReviewResult | None,
+        cache_key: str,
+    ) -> None:
+        """Finalize review verdict when all external CI actions succeed."""
+        if cached_review and cached_review.decision == ReviewDecision.APPROVE:
+            final_status = CommitStatus(
+                state=CommitState.SUCCESS,
+                description="All code reviews and CI checks passed!",
+                context="gitbert/pr-review",
+            )
+            await self.platform.set_commit_status(
+                event.repo, event.head_sha, final_status
+            )
+            if self.settings.review_mode.value == "enforcing":
+                await self.platform.submit_review(event.repo, pr_number, cached_review)
+            await self.cache.delete(cache_key)
+
     async def handle_status_event(self, event: PRReviewEvent) -> None:
         """Handle commit status updates from CI / Gitea Actions."""
-        pr_number = event.pr_number
-        if not pr_number and event.head_sha:
-            pr_number = (
-                await self.platform.find_pr_for_commit(event.repo, event.head_sha) or 0
+        pr_number: int | None = event.pr_number
+        if not pr_number:
+            pr_number = await self.platform.find_pr_for_commit(
+                event.repo, event.head_sha
             )
-
         if not pr_number:
             logger.info(
                 "No matching open PR for commit %s in %s",
@@ -416,10 +474,6 @@ class ReviewEngine:
             )
             return
 
-        failed_checks = [
-            s for s in external if s.state in (CommitState.FAILURE, CommitState.ERROR)
-        ]
-
         cache_key = f"{event.repo}:{pr_number}"
         cached_review = await self.cache.get(cache_key)
         if not cached_review:
@@ -429,55 +483,17 @@ class ReviewEngine:
                 event.repo,
             )
 
+        failed_checks = [
+            s for s in external if s.state in (CommitState.FAILURE, CommitState.ERROR)
+        ]
         if failed_checks:
-            failed = failed_checks[0]
-            if self.settings.diagnose_action_failures:
-                log_content = ""
-                if failed.target_url:
-                    raw_log = await self.platform.get_action_log(
-                        event.repo, failed.target_url
-                    )
-                    max_chars = self.settings.max_action_log_chars
-                    log_content = raw_log[-max_chars:] if raw_log else ""
-
-                diag = await self.diagnose_action_failure(
-                    event.repo, pr_number, failed.context, log_content
-                )
-                if diag:
-                    comment_body = (
-                        f"### ❌ CI Action Failed: `{diag.context}`\n\n"
-                        f"**Diagnosis**:\n{diag.diagnosis}\n\n"
-                        f"**Suggested Fix**:\n{diag.suggested_fix}"
-                    )
-                    await self.platform.post_pr_comment(
-                        event.repo, pr_number, comment_body
-                    )
-
-            fail_status = CommitStatus(
-                state=CommitState.FAILURE,
-                description=f"CI Action failed: {failed.context}",
-                context="gitbert/pr-review",
+            await self._handle_failed_ci_checks(
+                event, pr_number, failed_checks[0], cache_key
             )
-            await self.platform.set_commit_status(
-                event.repo, event.head_sha, fail_status
-            )
-            await self.cache.delete(cache_key)
         else:
-            # All CI checks succeeded!
-            if cached_review and cached_review.decision == ReviewDecision.APPROVE:
-                final_status = CommitStatus(
-                    state=CommitState.SUCCESS,
-                    description="All code reviews and CI checks passed!",
-                    context="gitbert/pr-review",
-                )
-                await self.platform.set_commit_status(
-                    event.repo, event.head_sha, final_status
-                )
-                if self.settings.review_mode.value == "enforcing":
-                    await self.platform.submit_review(
-                        event.repo, pr_number, cached_review
-                    )
-                await self.cache.delete(cache_key)
+            await self._handle_successful_ci_checks(
+                event, pr_number, cached_review, cache_key
+            )
 
     async def process_event(self, event: PRReviewEvent) -> ReviewResult | None:
         """Process incoming PR review or comment event through the full lifecycle."""

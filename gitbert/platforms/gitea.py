@@ -140,6 +140,111 @@ class GiteaAdapter(ICodePlatform):
         computed = hmac.new(secret_bytes, raw_body, hashlib.sha256).hexdigest()
         return hmac.compare_digest(signature, computed)
 
+    def _parse_pr_event(
+        self,
+        payload: dict[str, Any],
+        repo_full_name: str,
+        sender: str,
+        action: str | None,
+    ) -> PRReviewEvent:
+        """Parse pull_request webhook payload."""
+        pr_number = payload.get("number", 0)
+        pr_data = payload.get("pull_request", {})
+        head = pr_data.get("head", {})
+        base = pr_data.get("base", {})
+        head_sha = head.get("sha", "")
+        base_sha = base.get("sha", "")
+        is_draft = pr_data.get("draft", False)
+
+        if action in ("opened", "reopened"):
+            event_type = EventType.PR_OPENED
+        elif action == "synchronized":
+            event_type = EventType.PR_UPDATED
+        else:
+            event_type = EventType.IGNORED
+
+        return PRReviewEvent(
+            event_type=event_type,
+            platform="gitea",
+            repo=repo_full_name,
+            pr_number=pr_number,
+            sender=sender,
+            head_sha=head_sha,
+            base_sha=base_sha,
+            is_draft=is_draft,
+            raw_payload=payload,
+        )
+
+    def _parse_comment_event(
+        self,
+        event_name: str,
+        payload: dict[str, Any],
+        repo_full_name: str,
+        sender: str,
+        action: str | None,
+    ) -> PRReviewEvent | None:
+        """Parse issue_comment or pull_request_comment webhook payload."""
+        if event_name == "issue_comment":
+            issue = payload.get("issue", {})
+            if not issue.get("pull_request"):
+                return None
+            pr_number = issue.get("number", 0)
+        else:
+            pr_number = payload.get("pull_request", {}).get("number", 0)
+
+        if action != "created":
+            return PRReviewEvent(
+                event_type=EventType.IGNORED,
+                platform="gitea",
+                repo=repo_full_name,
+                pr_number=pr_number,
+                sender=sender,
+            )
+
+        comment_data = payload.get("comment", {})
+        comment_id = comment_data.get("id")
+        comment_body = comment_data.get("body", "")
+
+        return PRReviewEvent(
+            event_type=EventType.COMMENT,
+            platform="gitea",
+            repo=repo_full_name,
+            pr_number=pr_number,
+            sender=sender,
+            comment_id=comment_id,
+            comment_body=comment_body,
+            raw_payload=payload,
+        )
+
+    def _parse_status_event(
+        self,
+        payload: dict[str, Any],
+        repo_full_name: str,
+        sender: str,
+    ) -> PRReviewEvent:
+        """Parse commit status webhook payload with loop protection."""
+        context = payload.get("context", "")
+        if context.startswith(("gitbert/", "git-bot/")):
+            return PRReviewEvent(
+                event_type=EventType.IGNORED,
+                platform="gitea",
+                repo=repo_full_name,
+                sender=sender,
+            )
+
+        return PRReviewEvent(
+            event_type=EventType.STATUS,
+            platform="gitea",
+            repo=repo_full_name,
+            sender=sender,
+            head_sha=payload.get("sha", ""),
+            status_state=payload.get("state", ""),
+            status_context=context,
+            target_url=payload.get("target_url", ""),
+            status_description=payload.get("description", ""),
+            raw_payload=payload,
+        )
+
     def parse_event(
         self, headers: dict[str, str], payload: dict[str, Any]
     ) -> PRReviewEvent | None:
@@ -166,121 +271,21 @@ class GiteaAdapter(ICodePlatform):
 
         # 2. Pull Request lifecycle events
         if event_name == "pull_request":
-            pr_number = payload.get("number", 0)
-            pr_data = payload.get("pull_request", {})
-            head = pr_data.get("head", {})
-            base = pr_data.get("base", {})
-            head_sha = head.get("sha", "")
-            base_sha = base.get("sha", "")
-            is_draft = pr_data.get("draft", False)
+            return self._parse_pr_event(payload, repo_full_name, sender, action)
 
-            if action in ("opened", "reopened"):
-                event_type = EventType.PR_OPENED
-            elif action == "synchronized":
-                event_type = EventType.PR_UPDATED
-            else:
-                event_type = EventType.IGNORED
-
-            return PRReviewEvent(
-                event_type=event_type,
-                platform="gitea",
-                repo=repo_full_name,
-                pr_number=pr_number,
-                sender=sender,
-                head_sha=head_sha,
-                base_sha=base_sha,
-                is_draft=is_draft,
-                raw_payload=payload,
+        # 3. Comment events
+        if event_name in (
+            "issue_comment",
+            "pull_request_comment",
+            "pull_request_review_comment",
+        ):
+            return self._parse_comment_event(
+                event_name, payload, repo_full_name, sender, action
             )
 
-        # 3. Comment events (discussion comment on PR or inline review comment)
-        if event_name == "issue_comment":
-            issue = payload.get("issue", {})
-            # Only process if this issue is actually a Pull Request
-            if not issue.get("pull_request"):
-                return None
-
-            if action != "created":
-                return PRReviewEvent(
-                    event_type=EventType.IGNORED,
-                    platform="gitea",
-                    repo=repo_full_name,
-                    pr_number=issue.get("number", 0),
-                    sender=sender,
-                )
-
-            pr_number = issue.get("number", 0)
-            comment_data = payload.get("comment", {})
-            comment_id = comment_data.get("id")
-            comment_body = comment_data.get("body", "")
-
-            return PRReviewEvent(
-                event_type=EventType.COMMENT,
-                platform="gitea",
-                repo=repo_full_name,
-                pr_number=pr_number,
-                sender=sender,
-                comment_id=comment_id,
-                comment_body=comment_body,
-                raw_payload=payload,
-            )
-
-        if event_name in ("pull_request_comment", "pull_request_review_comment"):
-            if action != "created":
-                return PRReviewEvent(
-                    event_type=EventType.IGNORED,
-                    platform="gitea",
-                    repo=repo_full_name,
-                    pr_number=payload.get("pull_request", {}).get("number", 0),
-                    sender=sender,
-                )
-
-            pr_data = payload.get("pull_request", {})
-            pr_number = pr_data.get("number", 0)
-            comment_data = payload.get("comment", {})
-            comment_id = comment_data.get("id")
-            comment_body = comment_data.get("body", "")
-
-            return PRReviewEvent(
-                event_type=EventType.COMMENT,
-                platform="gitea",
-                repo=repo_full_name,
-                pr_number=pr_number,
-                sender=sender,
-                comment_id=comment_id,
-                comment_body=comment_body,
-                raw_payload=payload,
-            )
-
-        # 4. Commit Status events (from CI / Gitea Actions)
+        # 4. Commit Status events
         if event_name == "status":
-            context = payload.get("context", "")
-            # Loop protection: Ignore status events published by Gitbert itself
-            if context.startswith(("gitbert/", "git-bot/")):
-                return PRReviewEvent(
-                    event_type=EventType.IGNORED,
-                    platform="gitea",
-                    repo=repo_full_name,
-                    sender=sender,
-                )
-
-            sha = payload.get("sha", "")
-            state = payload.get("state", "")
-            description = payload.get("description", "")
-            target_url = payload.get("target_url", "")
-
-            return PRReviewEvent(
-                event_type=EventType.STATUS,
-                platform="gitea",
-                repo=repo_full_name,
-                sender=sender,
-                head_sha=sha,
-                status_state=state,
-                status_context=context,
-                target_url=target_url,
-                status_description=description,
-                raw_payload=payload,
-            )
+            return self._parse_status_event(payload, repo_full_name, sender)
 
         return None
 

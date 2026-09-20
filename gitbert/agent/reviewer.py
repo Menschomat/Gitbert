@@ -1,6 +1,6 @@
 """Factory for constructing isolated, scoped ADK reviewer agent."""
 
-from typing import Any
+from typing import Any, cast
 
 from google.adk.agents.llm_agent import Agent
 
@@ -36,5 +36,5 @@ def build_reviewer_agent(
         model=selected_model,
         description=agent_desc,
         instruction=REVIEWER_SYSTEM_INSTRUCTION,
-        tools=tools,
+        tools=cast(list[Any], tools),
     )

@@ -2,7 +2,7 @@
 
 from pydantic import SecretStr
 
-from git_bot.config import ReviewMode, Settings, get_settings
+from gitbert.config import ReviewMode, Settings, get_settings
 
 
 def test_default_settings():
@@ -82,7 +82,7 @@ def test_secret_str_masking():
 
 def test_comment_trigger_mode_default_and_override(monkeypatch):
     """Verify comment_trigger_mode defaults to AUTONOMOUS and can be overridden."""
-    from git_bot.config import CommentTriggerMode
+    from gitbert.config import CommentTriggerMode
 
     # 1. Default is AUTONOMOUS (Option B)
     settings = Settings(_env_file=None)

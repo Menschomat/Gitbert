@@ -7,10 +7,10 @@ Ensures that:
 - Inline comment line numbers are validated.
 """
 
-from git_bot.config import ReviewMode
-from git_bot.models.platform import CommitState, CommitStatus
-from git_bot.models.review import ReviewDecision, ReviewResult
-from git_bot.platforms.base import ICodePlatform
+from gitbert.config import ReviewMode
+from gitbert.models.platform import CommitState, CommitStatus
+from gitbert.models.review import ReviewDecision, ReviewResult
+from gitbert.platforms.base import ICodePlatform
 
 
 class ReviewPublisher:

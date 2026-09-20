@@ -9,10 +9,10 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
-from git_bot.config import Settings
-from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.platforms.base import ICodePlatform
-from git_bot.server import create_app
+from gitbert.config import Settings
+from gitbert.models.events import EventType, PRReviewEvent
+from gitbert.platforms.base import ICodePlatform
+from gitbert.server import create_app
 
 
 @pytest.fixture

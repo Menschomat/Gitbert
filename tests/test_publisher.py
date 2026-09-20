@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from git_bot.config import ReviewMode
-from git_bot.models.platform import CommitState
-from git_bot.models.review import InlineComment, ReviewDecision, ReviewResult
-from git_bot.orchestrator.publisher import ReviewPublisher
-from git_bot.platforms.base import ICodePlatform
+from gitbert.config import ReviewMode
+from gitbert.models.platform import CommitState
+from gitbert.models.review import InlineComment, ReviewDecision, ReviewResult
+from gitbert.orchestrator.publisher import ReviewPublisher
+from gitbert.platforms.base import ICodePlatform
 
 
 @pytest.fixture

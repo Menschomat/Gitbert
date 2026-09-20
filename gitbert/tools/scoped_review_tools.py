@@ -9,9 +9,9 @@ Hard security boundaries:
 from collections.abc import Callable
 from typing import Any
 
-from git_bot.platforms.base import ICodePlatform
-from git_bot.security.context import ScopedMRContext
-from git_bot.security.exceptions import SecurityScopeViolationError
+from gitbert.platforms.base import ICodePlatform
+from gitbert.security.context import ScopedMRContext
+from gitbert.security.exceptions import SecurityScopeViolationError
 
 
 def create_scoped_tools(

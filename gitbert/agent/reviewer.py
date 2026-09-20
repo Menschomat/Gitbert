@@ -2,11 +2,11 @@
 
 from google.adk.agents.llm_agent import Agent
 
-from git_bot.agent.prompts import REVIEWER_SYSTEM_INSTRUCTION
-from git_bot.config import get_settings
-from git_bot.platforms.base import ICodePlatform
-from git_bot.security.context import ScopedMRContext
-from git_bot.tools.scoped_review_tools import create_scoped_tools
+from gitbert.agent.prompts import REVIEWER_SYSTEM_INSTRUCTION
+from gitbert.config import get_settings
+from gitbert.platforms.base import ICodePlatform
+from gitbert.security.context import ScopedMRContext
+from gitbert.tools.scoped_review_tools import create_scoped_tools
 
 
 def build_reviewer_agent(

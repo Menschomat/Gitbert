@@ -2,9 +2,9 @@
 
 from unittest.mock import AsyncMock
 
-from git_bot.agent.reviewer import build_reviewer_agent
-from git_bot.platforms.base import ICodePlatform
-from git_bot.security.context import ScopedMRContext
+from gitbert.agent.reviewer import build_reviewer_agent
+from gitbert.platforms.base import ICodePlatform
+from gitbert.security.context import ScopedMRContext
 
 
 def test_build_reviewer_agent():

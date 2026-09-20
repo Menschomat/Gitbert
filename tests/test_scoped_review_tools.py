@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from git_bot.models.platform import ChangedFile, PRMetadata
-from git_bot.platforms.base import ICodePlatform
-from git_bot.security.context import ScopedMRContext
-from git_bot.security.exceptions import SecurityScopeViolationError
-from git_bot.tools.scoped_review_tools import create_scoped_tools
+from gitbert.models.platform import ChangedFile, PRMetadata
+from gitbert.platforms.base import ICodePlatform
+from gitbert.security.context import ScopedMRContext
+from gitbert.security.exceptions import SecurityScopeViolationError
+from gitbert.tools.scoped_review_tools import create_scoped_tools
 
 
 @pytest.fixture
@@ -128,7 +128,7 @@ async def test_scoped_get_pr_comments(mock_platform, scoped_context):
     """Verify get_pr_comments retrieves and formats prior comments."""
     from datetime import UTC, datetime
 
-    from git_bot.models.comments import CommentType, PRComment
+    from gitbert.models.comments import CommentType, PRComment
 
     mock_platform.get_pr_comments.return_value = [
         PRComment(

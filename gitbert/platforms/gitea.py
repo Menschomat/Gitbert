@@ -8,11 +8,11 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
-from git_bot.models.comments import CommentType, PRComment
-from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
-from git_bot.models.review import ReviewResult
-from git_bot.platforms.base import ICodePlatform
+from gitbert.models.comments import CommentType, PRComment
+from gitbert.models.events import EventType, PRReviewEvent
+from gitbert.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
+from gitbert.models.review import ReviewResult
+from gitbert.platforms.base import ICodePlatform
 
 
 class GiteaAdapter(ICodePlatform):

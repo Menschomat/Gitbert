@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Copy application files and finalize package installation
 COPY pyproject.toml README.md uv.lock ./
-COPY git_bot/ ./git_bot/
+COPY gitbert/ ./gitbert/
 COPY main.py ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -41,7 +41,7 @@ RUN groupadd -g 1000 appgroup && \
 
 # Copy virtual environment and project files from builder
 COPY --from=builder --chown=appuser:appgroup /app/.venv /app/.venv
-COPY --from=builder --chown=appuser:appgroup /app/git_bot /app/git_bot
+COPY --from=builder --chown=appuser:appgroup /app/gitbert /app/gitbert
 COPY --from=builder --chown=appuser:appgroup /app/main.py /app/main.py
 COPY --from=builder --chown=appuser:appgroup /app/pyproject.toml /app/pyproject.toml
 

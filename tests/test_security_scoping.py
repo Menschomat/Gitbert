@@ -2,8 +2,8 @@
 
 import pytest
 
-from git_bot.security.context import ScopedMRContext
-from git_bot.security.exceptions import SecurityScopeViolationError
+from gitbert.security.context import ScopedMRContext
+from gitbert.security.exceptions import SecurityScopeViolationError
 
 
 def test_scoped_context_immutability():

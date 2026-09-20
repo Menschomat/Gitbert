@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-from git_bot.security.exceptions import SecurityScopeViolationError
+from gitbert.security.exceptions import SecurityScopeViolationError
 
 # Patterns and extensions strictly blocked from LLM inspection to prevent secret leakage
 SENSITIVE_NAME_PATTERNS = (

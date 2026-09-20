@@ -1,7 +1,7 @@
 [project]
-name = "git-bot"
+name = "gitbert"
 version = "0.1.0"
-description = "Google ADK 2.0 AI agent managed by uv"
+description = "Gitbert: Google ADK 2.0 AI code review agent managed by uv"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
+gitbert = "main:main"
 git-bot = "main:main"
 
 [dependency-groups]
@@ -30,7 +31,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["git_bot"]
+packages = ["gitbert"]
 
 [tool.ruff]
 target-version = "py312"

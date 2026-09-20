@@ -1,8 +1,8 @@
 """Platform adapter factory."""
 
-from git_bot.config import Settings, get_settings
-from git_bot.platforms.base import ICodePlatform
-from git_bot.platforms.gitea import GiteaAdapter
+from gitbert.config import Settings, get_settings
+from gitbert.platforms.base import ICodePlatform
+from gitbert.platforms.gitea import GiteaAdapter
 
 
 def get_platform_adapter(

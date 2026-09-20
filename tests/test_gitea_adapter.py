@@ -8,10 +8,10 @@ import respx
 from httpx import Response
 from pydantic import SecretStr
 
-from git_bot.models.events import EventType
-from git_bot.models.platform import CommitState, CommitStatus
-from git_bot.models.review import InlineComment, ReviewDecision, ReviewResult
-from git_bot.platforms.gitea import GiteaAdapter
+from gitbert.models.events import EventType
+from gitbert.models.platform import CommitState, CommitStatus
+from gitbert.models.review import InlineComment, ReviewDecision, ReviewResult
+from gitbert.platforms.gitea import GiteaAdapter
 
 
 @pytest.fixture
@@ -325,7 +325,7 @@ async def test_get_pr_comments(gitea_adapter):
     assert comments[0].author == "developer_alice"
     assert comments[0].is_bot is False
 
-    # Second comment is from git_bot
+    # Second comment is from gitbert
     assert comments[1].author == "git_bot"
     assert comments[1].is_bot is True
 

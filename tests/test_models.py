@@ -3,9 +3,9 @@
 import pytest
 from pydantic import ValidationError
 
-from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
-from git_bot.models.review import InlineComment, ReviewDecision, ReviewResult
+from gitbert.models.events import EventType, PRReviewEvent
+from gitbert.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
+from gitbert.models.review import InlineComment, ReviewDecision, ReviewResult
 
 
 def test_commit_status_validation():
@@ -92,7 +92,7 @@ def test_pr_comment_model():
     """Verify PRComment model validation and defaults."""
     from datetime import UTC, datetime
 
-    from git_bot.models.comments import CommentType, PRComment
+    from gitbert.models.comments import CommentType, PRComment
 
     now = datetime.now(UTC)
     comment = PRComment(
@@ -114,7 +114,7 @@ def test_pr_comment_model():
 
 def test_comment_response_model():
     """Verify CommentResponse model validation."""
-    from git_bot.models.review import CommentResponse
+    from gitbert.models.review import CommentResponse
 
     resp = CommentResponse(
         should_reply=True,
@@ -128,8 +128,8 @@ def test_comment_response_model():
 
 def test_action_diagnostic_result_model():
     """Verify ActionDiagnosticResult model validation."""
-    from git_bot.models.events import EventType, PRReviewEvent
-    from git_bot.models.review import ActionDiagnosticResult
+    from gitbert.models.events import EventType, PRReviewEvent
+    from gitbert.models.review import ActionDiagnosticResult
 
     diag = ActionDiagnosticResult(
         context="test-python3.14",

@@ -5,22 +5,22 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from git_bot.agent.prompts import (
+from gitbert.agent.prompts import (
     ACTION_DIAGNOSTIC_INSTRUCTION,
     COMMENT_RESPONDER_INSTRUCTION,
 )
-from git_bot.config import CommentTriggerMode, Settings, get_settings
-from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.models.platform import CommitState, CommitStatus
-from git_bot.models.review import (
+from gitbert.config import CommentTriggerMode, Settings, get_settings
+from gitbert.models.events import EventType, PRReviewEvent
+from gitbert.models.platform import CommitState, CommitStatus
+from gitbert.models.review import (
     ActionDiagnosticResult,
     CommentResponse,
     ReviewDecision,
     ReviewResult,
 )
-from git_bot.orchestrator.publisher import ReviewPublisher
-from git_bot.platforms.base import ICodePlatform
-from git_bot.security.context import ScopedMRContext
+from gitbert.orchestrator.publisher import ReviewPublisher
+from gitbert.platforms.base import ICodePlatform
+from gitbert.security.context import ScopedMRContext
 
 logger = logging.getLogger(__name__)
 

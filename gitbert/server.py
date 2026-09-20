@@ -8,11 +8,11 @@ from typing import Any
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from git_bot.config import Settings, get_settings
-from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.orchestrator.engine import ReviewEngine
-from git_bot.platforms.base import ICodePlatform
-from git_bot.platforms.factory import get_platform_adapter
+from gitbert.config import Settings, get_settings
+from gitbert.models.events import EventType, PRReviewEvent
+from gitbert.orchestrator.engine import ReviewEngine
+from gitbert.platforms.base import ICodePlatform
+from gitbert.platforms.factory import get_platform_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def create_app(
     semaphore = asyncio.Semaphore(cfg.max_concurrent_reviews)
 
     app = FastAPI(
-        title="git_bot PR Reviewer",
+        title="Gitbert PR Reviewer",
         description="Automated AI Code Reviewer for Gitea Merge Requests",
         version="0.1.0",
     )

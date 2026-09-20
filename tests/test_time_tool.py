@@ -2,7 +2,7 @@
 
 import re
 
-from git_bot.tools.time_tool import get_current_time
+from gitbert.tools.time_tool import get_current_time
 
 
 def test_get_current_time_default_utc():

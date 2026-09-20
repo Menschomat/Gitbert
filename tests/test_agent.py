@@ -1,7 +1,7 @@
 """Tests for agent configuration and registration."""
 
-from git_bot.agent import root_agent
-from git_bot.tools import get_current_time
+from gitbert.agent import root_agent
+from gitbert.tools import get_current_time
 
 
 def test_agent_initialization():

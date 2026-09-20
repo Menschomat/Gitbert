@@ -1,4 +1,4 @@
-"""CLI entrypoint for git_bot.
+"""CLI entrypoint for Gitbert.
 
 Commands:
 - server: Start the FastAPI webhook receiver server.
@@ -9,10 +9,10 @@ Commands:
 import argparse
 import asyncio
 
-from git_bot.config import get_settings
-from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.orchestrator.engine import ReviewEngine
-from git_bot.platforms.factory import get_platform_adapter
+from gitbert.config import get_settings
+from gitbert.models.events import EventType, PRReviewEvent
+from gitbert.orchestrator.engine import ReviewEngine
+from gitbert.platforms.factory import get_platform_adapter
 
 
 def run_server(args: argparse.Namespace) -> None:
@@ -24,12 +24,12 @@ def run_server(args: argparse.Namespace) -> None:
     port = args.port or settings.port
 
     print("=" * 60)
-    print(f"Starting git_bot Webhook Server on {host}:{port}")
+    print(f"Starting Gitbert Webhook Server on {host}:{port}")
     print(f"Operational Mode:   {settings.review_mode.value.upper()}")
     print(f"Max Concurrency:    {settings.max_concurrent_reviews}")
     print(f"Target Gitea URL:   {settings.gitea_url}")
     print("=" * 60)
-    uvicorn.run("git_bot.server:app", host=host, port=port, reload=False)
+    uvicorn.run("gitbert.server:app", host=host, port=port, reload=False)
 
 
 async def run_review_async(repo: str, pr_number: int, platform_name: str) -> None:
@@ -79,7 +79,7 @@ def print_info() -> None:
     key_status = "[Configured]" if settings.google_api_key else "[Unset]"
 
     print("=" * 60)
-    print("git_bot - Multi-Platform PR Review Agent (ADK 2.0)")
+    print("Gitbert - Multi-Platform PR Review Agent (ADK 2.0)")
     print("=" * 60)
     print(f"Bot Name:          {settings.bot_name}")
     print(f"Review Mode:       {settings.review_mode.value.upper()}")
@@ -97,7 +97,7 @@ def print_info() -> None:
 
 def main() -> None:
     """CLI routing entrypoint."""
-    parser = argparse.ArgumentParser(description="git_bot PR Reviewer CLI")
+    parser = argparse.ArgumentParser(description="Gitbert PR Reviewer CLI")
     subparsers = parser.add_subparsers(dest="command")
 
     # Server command

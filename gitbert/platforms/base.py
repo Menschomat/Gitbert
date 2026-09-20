@@ -3,10 +3,10 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from git_bot.models.comments import PRComment
-from git_bot.models.events import PRReviewEvent
-from git_bot.models.platform import CommitStatus, PRMetadata
-from git_bot.models.review import ReviewResult
+from gitbert.models.comments import PRComment
+from gitbert.models.events import PRReviewEvent
+from gitbert.models.platform import CommitStatus, PRMetadata
+from gitbert.models.review import ReviewResult
 
 
 class ICodePlatform(ABC):

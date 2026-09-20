@@ -28,7 +28,7 @@ Built with **Google Agent Development Kit (ADK) 2.0** • Managed with **uv** �
 
 ### 🏆 Why git_bot? (Competitive Highlights)
 
-- 🛡️ **Hard Programmatic Security Guardrails**: Unlike naive LLM bots that take arbitrary user input, `git_bot` isolates every review within an immutable [`ScopedMRContext`](file:///Users/fweihrauch/Documents/Code/git_bot/git_bot/security/context.py). The LLM is given **read-only scoped tools** with a strict file allowlist—preventing prompt injection attacks from accessing files outside the MR or executing unauthorized writes.
+- 🛡️ **Hard Programmatic Security Guardrails**: Unlike naive LLM bots that take arbitrary user input, Gitbert isolates every review within an immutable [`ScopedMRContext`](file:///Users/fweihrauch/Documents/Code/git_bot/gitbert/security/context.py). The LLM is given **read-only scoped tools** with a strict file allowlist—preventing prompt injection attacks from accessing files outside the MR or executing unauthorized writes.
 - ⚙️ **Two-Phase CI/CD Awareness & Action Log Diagnostics**: If Gitea Actions or CI jobs are running, the bot immediately posts code review comments without waiting. Once CI finishes, it issues the final approval—or if an Action fails, autonomously pulls failure logs, isolates root causes, and posts actionable code solutions directly on the MR.
 - 💬 **Historical Context & Smart Comment Interaction**: Reads prior MR comments, reliably identifies its own previous feedback (`is_bot: true`), tracks resolved issues across PR iterations, and intelligently responds to developer questions on the thread without infinite loops or noise.
 - 🔌 **Modular Platform Abstraction Layer (`ICodePlatform`)**: Built on a clean Adapter Pattern. Ships with a full-featured **Gitea** integration today, architected from the ground up for seamless expansion to **GitHub** and **GitLab** without touching core review logic.
@@ -86,21 +86,21 @@ When automating code reviews, trusting the LLM to follow security rules is not e
 
 | Threat Vector | Mitigation in git_bot | Implementation |
 | :--- | :--- | :--- |
-| **Path Traversal / Secret Reading** | **File Allowlisting**: Tool only permits files modified in that exact PR. Reading `.env` or `../../` raises `SecurityScopeViolationError`. | [`git_bot/security/context.py`](file:///Users/fweihrauch/Documents/Code/git_bot/git_bot/security/context.py) |
-| **Cross-Repo / Cross-PR Pollution** | **Context Locking**: Target repo and PR number are bound in tool closures—never provided as arguments by the LLM. | [`git_bot/tools/scoped_review_tools.py`](file:///Users/fweihrauch/Documents/Code/git_bot/git_bot/tools/scoped_review_tools.py) |
-| **Unauthorized Platform Writes** | **Read/Write Separation**: The LLM is **never given write tools**. Publishing is handled by deterministic Python code. | [`git_bot/orchestrator/publisher.py`](file:///Users/fweihrauch/Documents/Code/git_bot/git_bot/orchestrator/publisher.py) |
-| **Data & Secret Leakage** | **Pydantic SecretStr**: Sensitive tokens (`gitea_token`, `google_api_key`) are masked in string representations and logs. | [`git_bot/config.py`](file:///Users/fweihrauch/Documents/Code/git_bot/git_bot/config.py) |
+| **Path Traversal / Secret Reading** | **File Allowlisting**: Tool only permits files modified in that exact PR. Reading `.env` or `../../` raises `SecurityScopeViolationError`. | [`gitbert/security/context.py`](file:///Users/fweihrauch/Documents/Code/git_bot/gitbert/security/context.py) |
+| **Cross-Repo / Cross-PR Pollution** | **Context Locking**: Target repo and PR number are bound in tool closures—never provided as arguments by the LLM. | [`gitbert/tools/scoped_review_tools.py`](file:///Users/fweihrauch/Documents/Code/git_bot/gitbert/tools/scoped_review_tools.py) |
+| **Unauthorized Platform Writes** | **Read/Write Separation**: The LLM is **never given write tools**. Publishing is handled by deterministic Python code. | [`gitbert/orchestrator/publisher.py`](file:///Users/fweihrauch/Documents/Code/git_bot/gitbert/orchestrator/publisher.py) |
+| **Data & Secret Leakage** | **Pydantic SecretStr**: Sensitive tokens (`gitea_token`, `google_api_key`) are masked in string representations and logs. | [`gitbert/config.py`](file:///Users/fweihrauch/Documents/Code/git_bot/gitbert/config.py) |
 
 ---
 
 ## 📁 Repository Structure
 
 ```text
-git_bot/
+gitbert/
 ├── .gitea/
 │   └── workflows/
 │       └── ci.yaml              # Multi-version CI/CD matrix (3.12, 3.13, 3.14) + Docker build
-├── git_bot/
+├── gitbert/
 │   ├── __init__.py              # Package exports (root_agent)
 │   ├── config.py                # Tiered configuration (CLI, Env, TOML, Defaults)
 │   ├── server.py                # FastAPI webhook receiver & health checks
@@ -130,7 +130,7 @@ git_bot/
 │       ├── __init__.py
 │       ├── scoped_review_tools.py # Per-invocation locked review tools
 │       └── time_tool.py         # Baseline tool
-├── tests/                       # 39 automated unit & integration tests
+├── tests/                       # 66 automated unit & integration tests
 ├── config.example.toml          # Template TOML configuration file
 ├── Dockerfile                   # Multi-stage, non-root Python 3.14 container
 ├── main.py                      # Unified CLI entrypoint (server, review, info)

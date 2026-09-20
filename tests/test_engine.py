@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from git_bot.config import ReviewMode, Settings
-from git_bot.models.events import EventType, PRReviewEvent
-from git_bot.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
-from git_bot.models.review import ReviewDecision, ReviewResult
-from git_bot.orchestrator.engine import ReviewEngine
-from git_bot.platforms.base import ICodePlatform
+from gitbert.config import ReviewMode, Settings
+from gitbert.models.events import EventType, PRReviewEvent
+from gitbert.models.platform import ChangedFile, CommitState, CommitStatus, PRMetadata
+from gitbert.models.review import ReviewDecision, ReviewResult
+from gitbert.orchestrator.engine import ReviewEngine
+from gitbert.platforms.base import ICodePlatform
 
 
 @pytest.fixture
@@ -119,7 +119,7 @@ async def test_engine_process_comment_event_mentioned(mock_platform):
 @pytest.mark.asyncio
 async def test_engine_process_comment_mention_only_ignored(mock_platform):
     """Verify engine ignores unmentioned comments when in MENTION_ONLY mode."""
-    from git_bot.config import CommentTriggerMode
+    from gitbert.config import CommentTriggerMode
 
     settings = Settings(
         comment_trigger_mode=CommentTriggerMode.MENTION_ONLY,
@@ -143,7 +143,7 @@ async def test_engine_process_comment_mention_only_ignored(mock_platform):
 @pytest.mark.asyncio
 async def test_engine_process_comment_custom_responder(mock_platform):
     """Verify custom comment responder is invoked and posts reply."""
-    from git_bot.models.review import CommentResponse
+    from gitbert.models.review import CommentResponse
 
     mock_responder = AsyncMock(
         return_value=CommentResponse(
@@ -250,7 +250,7 @@ async def test_engine_status_event_all_succeeded(mock_platform):
 @pytest.mark.asyncio
 async def test_engine_status_event_failed_with_diagnostics(mock_platform):
     """Verify diagnosing failure and posting advice when CI action fails."""
-    from git_bot.models.review import ActionDiagnosticResult
+    from gitbert.models.review import ActionDiagnosticResult
 
     mock_platform.get_commit_statuses.return_value = [
         CommitStatus(

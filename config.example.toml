@@ -31,3 +31,8 @@ openai_compatible_api_base = "https://openrouter.ai/api/v1"
 gitea_url = "http://localhost:3000"
 # gitea_token = "your-gitea-token"
 # gitea_webhook_secret = "your-webhook-secret"
+
+# Cache options (Optional: Valkey / Redis URL, defaults to in-memory TTL cache)
+# redis_url = "redis://localhost:6379/0"
+# cache_ttl_seconds = 86400
+

@@ -215,9 +215,12 @@ async def test_engine_status_event_all_succeeded(mock_platform):
     engine = ReviewEngine(platform=mock_platform)
 
     # Seed the cached review
-    engine._cached_reviews["owner/repo:15"] = ReviewResult(
-        decision=ReviewDecision.APPROVE,
-        summary="Clean code",
+    await engine.cache.set(
+        "owner/repo:15",
+        ReviewResult(
+            decision=ReviewDecision.APPROVE,
+            summary="Clean code",
+        ),
     )
 
     # CI checks are now all SUCCESS

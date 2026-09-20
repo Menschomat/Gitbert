@@ -10,6 +10,7 @@ from gitbert.agent.prompts import (
     COMMENT_RESPONDER_INSTRUCTION,
     REVIEWER_SYSTEM_INSTRUCTION,
 )
+from gitbert.cache import ICacheProvider, get_cache_provider
 from gitbert.config import (
     CommentTriggerMode,
     ModelProvider,
@@ -41,6 +42,7 @@ class ReviewEngine:
         analyzer: Callable[..., Any] | None = None,
         responder: Callable[..., Any] | None = None,
         diagnostician: Callable[..., Any] | None = None,
+        cache: ICacheProvider | None = None,
     ):
         self.platform = platform
         self.settings = app_settings or get_settings()
@@ -51,7 +53,7 @@ class ReviewEngine:
         self._custom_analyzer = analyzer
         self._custom_responder = responder
         self._custom_diagnostician = diagnostician
-        self._cached_reviews: dict[str, ReviewResult] = {}
+        self.cache: ICacheProvider = cache or get_cache_provider(self.settings)
 
     async def analyze_pr(self, context: ScopedMRContext, diff: str) -> ReviewResult:
         """Analyze PR diff and generate structured ReviewResult."""
@@ -414,7 +416,13 @@ class ReviewEngine:
         ]
 
         cache_key = f"{event.repo}:{pr_number}"
-        cached_review = self._cached_reviews.get(cache_key)
+        cached_review = await self.cache.get(cache_key)
+        if not cached_review:
+            logger.info(
+                "No cached review found for PR #%d in %s (may have expired)",
+                pr_number,
+                event.repo,
+            )
 
         if failed_checks:
             failed = failed_checks[0]
@@ -448,6 +456,7 @@ class ReviewEngine:
             await self.platform.set_commit_status(
                 event.repo, event.head_sha, fail_status
             )
+            await self.cache.delete(cache_key)
         else:
             # All CI checks succeeded!
             if cached_review and cached_review.decision == ReviewDecision.APPROVE:
@@ -463,6 +472,7 @@ class ReviewEngine:
                     await self.platform.submit_review(
                         event.repo, pr_number, cached_review
                     )
+                await self.cache.delete(cache_key)
 
     async def process_event(self, event: PRReviewEvent) -> ReviewResult | None:
         """Process incoming PR review or comment event through the full lifecycle."""
@@ -525,7 +535,9 @@ class ReviewEngine:
         # 4. Analyze PR
         review = await self.analyze_pr(context, diff)
         cache_key = f"{event.repo}:{event.pr_number}"
-        self._cached_reviews[cache_key] = review
+        await self.cache.set(
+            cache_key, review, ttl_seconds=self.settings.cache_ttl_seconds
+        )
 
         # 5. Check if external CI actions are currently running
         statuses = await self.platform.get_commit_statuses(event.repo, event.head_sha)

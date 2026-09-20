@@ -69,6 +69,8 @@ def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--gitea-url", type=str)
     parser.add_argument("--gitea-token", type=str)
     parser.add_argument("--gitea-webhook-secret", type=str)
+    parser.add_argument("--redis-url", type=str)
+    parser.add_argument("--cache-ttl-seconds", type=int)
     parser.add_argument("--config", type=str, dest="config_file")
 
     parsed, _ = parser.parse_known_args(args)
@@ -189,6 +191,16 @@ class Settings(BaseSettings):
     )
     config_file: str | None = Field(
         default=None, description="Optional path to configuration TOML file"
+    )
+
+    # Cache settings (Valkey / Redis or In-Memory fallback)
+    redis_url: str | None = Field(
+        default=None,
+        description="Optional Redis/Valkey URL (e.g. redis://localhost:6379/0)",
+    )
+    cache_ttl_seconds: int = Field(
+        default=86400,
+        description="TTL for cached PR reviews in seconds (default: 86400 / 24h)",
     )
 
     def __init__(

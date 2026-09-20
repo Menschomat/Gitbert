@@ -344,10 +344,8 @@ class GiteaAdapter(ICodePlatform):
                         body = item.get("body", "")
                         is_bot = (
                             author.lower() == self.bot_name.lower()
+                            or "<!-- gitbert" in body
                             or "<!-- git-bot" in body
-                            or "🤖 **Gitbert**" in body
-                            or "🤖 **git_bot**" in body
-                            or f"🤖 **{self.bot_name}**" in body
                         )
                         dt_str = item.get("created_at")
                         created_at = (
@@ -385,10 +383,8 @@ class GiteaAdapter(ICodePlatform):
                                 body = item.get("body", "")
                                 is_bot = (
                                     author.lower() == self.bot_name.lower()
+                                    or "<!-- gitbert" in body
                                     or "<!-- git-bot" in body
-                                    or "🤖 **Gitbert**" in body
-                                    or "🤖 **git_bot**" in body
-                                    or f"🤖 **{self.bot_name}**" in body
                                 )
                                 dt_str = item.get("created_at")
                                 created_at = (
@@ -420,7 +416,7 @@ class GiteaAdapter(ICodePlatform):
 
     async def post_pr_comment(self, repo: str, pr_number: int, body: str) -> None:
         """Post a comment to the pull request discussion thread."""
-        watermarked = f"<!-- git-bot-comment -->\n\n🤖 **{self.bot_name}**\n\n{body}"
+        watermarked = f"<!-- gitbert-comment -->\n\n🤖 **{self.bot_name}**\n\n{body}"
         async with self._get_client() as client:
             resp = await client.post(
                 f"/api/v1/repos/{repo}/issues/{pr_number}/comments",

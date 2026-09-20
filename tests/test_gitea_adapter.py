@@ -348,7 +348,7 @@ async def test_post_pr_comment(gitea_adapter):
     )
     assert comment_mock.called
     body = comment_mock.calls.last.request.read().decode("utf-8")
-    assert "<!-- git-bot-comment -->" in body
+    assert "<!-- gitbert-comment -->" in body
     assert "🤖 **Gitbert**" in body
     assert "Here is how to optimize the database query." in body
 

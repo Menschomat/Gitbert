@@ -33,9 +33,16 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# Environment variables & secrets
+# Environment variables, configurations & secrets
 .env
+.env.*
+!.env.example
 *.local.env
+config.toml
+*.local.toml
+*.key
+*.pem
+*.log
 
 # IDEs & OS metadata
 .kilo/

@@ -120,3 +120,35 @@ def test_action_settings_default_and_override(monkeypatch):
     )
     assert cli_settings.await_actions_completion is False
     assert cli_settings.diagnose_action_failures is False
+
+
+def test_model_provider_settings_default_and_override(monkeypatch):
+    """Verify model provider and OpenAI-compatible settings defaults and overrides."""
+    from google.adk.models.lite_llm import LiteLlm
+
+    from gitbert.config import ModelProvider
+
+    settings = Settings(_env_file=None)
+    assert settings.model_provider == ModelProvider.GEMINI
+    assert settings.model_name == "gemini-2.0-flash"
+    assert settings.get_adk_model() == "gemini-2.0-flash"
+
+    # Env overrides
+    monkeypatch.setenv("MODEL_PROVIDER", "litellm")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "sk-openrouter-secret")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_MODEL", "openrouter/mistralai/mistral-large")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_BASE", "https://openrouter.ai/api/v1")
+
+    env_settings = get_settings(_env_file=None)
+    assert env_settings.model_provider == ModelProvider.LITELLM
+    assert env_settings.openai_compatible_model == "openrouter/mistralai/mistral-large"
+    assert env_settings.openai_compatible_api_base == "https://openrouter.ai/api/v1"
+    assert (
+        env_settings.openai_compatible_api_key.get_secret_value()
+        == "sk-openrouter-secret"
+    )
+    assert "sk-openrouter-secret" not in repr(env_settings)
+
+    adk_model = env_settings.get_adk_model()
+    assert isinstance(adk_model, LiteLlm)
+    assert adk_model.model == "openrouter/mistralai/mistral-large"

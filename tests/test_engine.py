@@ -301,3 +301,137 @@ async def test_engine_status_event_failed_with_diagnostics(mock_platform):
     # Status check updated to FAILURE
     last_status = mock_platform.set_commit_status.call_args[0][2]
     assert last_status.state == CommitState.FAILURE
+
+
+@pytest.mark.asyncio
+async def test_engine_analyze_pr_litellm(mock_platform):
+    """Verify analyze_pr uses litellm when model_provider is litellm."""
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from gitbert.config import ModelProvider, Settings
+    from gitbert.security.context import ScopedMRContext
+
+    settings = Settings(
+        model_provider=ModelProvider.LITELLM,
+        openai_compatible_api_key="test-key",
+        openai_compatible_model="openrouter/anthropic/claude-3.5-sonnet",
+        _env_file=None,
+    )
+    engine = ReviewEngine(platform=mock_platform, app_settings=settings)
+    context = ScopedMRContext(
+        platform="gitea",
+        repo="owner/repo",
+        pr_number=10,
+        head_sha="sha123",
+        base_sha="sha456",
+        allowed_files=frozenset(["src/app.py"]),
+    )
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(
+        {
+            "decision": "APPROVED",
+            "summary": "Looks great from Claude via OpenRouter.",
+            "strengths": ["Clean code"],
+            "risks_or_concerns": [],
+            "inline_comments": [],
+        }
+    )
+    mock_litellm_resp = MagicMock(choices=[mock_choice])
+
+    with patch(
+        "litellm.acompletion", new_callable=AsyncMock, return_value=mock_litellm_resp
+    ) as mock_acompletion:
+        result = await engine.analyze_pr(context, "+ print('hello')")
+        assert result.decision == ReviewDecision.APPROVE
+        assert "Claude" in result.summary
+        mock_acompletion.assert_called_once()
+        call_kwargs = mock_acompletion.call_args[1]
+        assert call_kwargs["model"] == "openrouter/anthropic/claude-3.5-sonnet"
+        assert call_kwargs["api_key"] == "test-key"
+
+
+@pytest.mark.asyncio
+async def test_engine_comment_reply_litellm(mock_platform):
+    """Verify comment evaluation uses litellm when configured."""
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from gitbert.config import ModelProvider, Settings
+
+    settings = Settings(
+        model_provider=ModelProvider.LITELLM,
+        openai_compatible_api_key="test-key",
+        openai_compatible_model="openrouter/google/gemini-2.0-flash",
+        _env_file=None,
+    )
+    mock_platform.get_pr_comments.return_value = []
+    engine = ReviewEngine(platform=mock_platform, app_settings=settings)
+
+    event = PRReviewEvent(
+        event_type=EventType.COMMENT,
+        platform="gitea",
+        repo="owner/repo",
+        pr_number=10,
+        sender="alice",
+        comment_id=1,
+        comment_body="How do I configure the database?",
+    )
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(
+        {
+            "should_reply": True,
+            "reply": "You can set DATABASE_URL in your .env file.",
+            "reasoning": "Technical query answered.",
+        }
+    )
+    mock_litellm_resp = MagicMock(choices=[mock_choice])
+
+    with patch(
+        "litellm.acompletion", new_callable=AsyncMock, return_value=mock_litellm_resp
+    ):
+        response = await engine.evaluate_and_reply_comment(event)
+        assert response is not None
+        assert response.should_reply is True
+        assert "DATABASE_URL" in response.reply
+        mock_platform.post_pr_comment.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_engine_action_diagnosis_litellm(mock_platform):
+    """Verify action diagnosis uses litellm when configured."""
+    import json
+    from unittest.mock import MagicMock, patch
+
+    from gitbert.config import ModelProvider, Settings
+
+    settings = Settings(
+        model_provider=ModelProvider.LITELLM,
+        openai_compatible_api_key="test-key",
+        openai_compatible_model="openrouter/anthropic/claude-3.5-sonnet",
+        _env_file=None,
+    )
+    engine = ReviewEngine(platform=mock_platform, app_settings=settings)
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(
+        {
+            "context": "build/docker",
+            "diagnosis": "Missing apt package libpq-dev",
+            "suggested_fix": "Add RUN apt-get install -y libpq-dev to Dockerfile",
+            "related_files": ["Dockerfile"],
+        }
+    )
+    mock_litellm_resp = MagicMock(choices=[mock_choice])
+
+    with patch(
+        "litellm.acompletion", new_callable=AsyncMock, return_value=mock_litellm_resp
+    ):
+        diag = await engine.diagnose_action_failure(
+            "owner/repo", 10, "build/docker", "error: libpq-dev not found"
+        )
+        assert diag is not None
+        assert "libpq-dev" in diag.diagnosis
+        assert "Dockerfile" in diag.related_files

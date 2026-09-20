@@ -30,3 +30,27 @@ def test_build_reviewer_agent():
     assert "get_pr_metadata" in tool_names
     assert "list_repository_files" in tool_names
     assert "get_pr_comments" in tool_names
+
+
+def test_build_reviewer_agent_with_litellm(monkeypatch):
+    """Verify reviewer agent uses LiteLlm when MODEL_PROVIDER=litellm."""
+    from google.adk.models.lite_llm import LiteLlm
+
+    monkeypatch.setenv("MODEL_PROVIDER", "litellm")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_MODEL", "openrouter/deepseek/deepseek-chat")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "fake-key")
+
+    mock_platform = AsyncMock(spec=ICodePlatform)
+    context = ScopedMRContext(
+        platform="gitea",
+        repo="myorg/repo",
+        pr_number=5,
+        head_sha="head-123",
+        base_sha="base-456",
+        allowed_files=frozenset(["src/app.py"]),
+    )
+
+    agent = build_reviewer_agent(context, mock_platform)
+    assert agent is not None
+    assert isinstance(agent.model, LiteLlm)
+    assert agent.model.model == "openrouter/deepseek/deepseek-chat"

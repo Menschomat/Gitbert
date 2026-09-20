@@ -8,8 +8,14 @@ from typing import Any
 from gitbert.agent.prompts import (
     ACTION_DIAGNOSTIC_INSTRUCTION,
     COMMENT_RESPONDER_INSTRUCTION,
+    REVIEWER_SYSTEM_INSTRUCTION,
 )
-from gitbert.config import CommentTriggerMode, Settings, get_settings
+from gitbert.config import (
+    CommentTriggerMode,
+    ModelProvider,
+    Settings,
+    get_settings,
+)
 from gitbert.models.events import EventType, PRReviewEvent
 from gitbert.models.platform import CommitState, CommitStatus
 from gitbert.models.review import (
@@ -52,8 +58,11 @@ class ReviewEngine:
         if self._custom_analyzer is not None:
             return await self._custom_analyzer(context, diff)
 
-        # If Google API key is configured, use Gemini with structured output
-        if self.settings.google_api_key:
+        # 1. Native Google Gemini mode
+        if (
+            self.settings.model_provider == ModelProvider.GEMINI
+            and self.settings.google_api_key
+        ):
             try:
                 from google import genai
 
@@ -79,6 +88,41 @@ class ReviewEngine:
             except Exception as exc:
                 logger.warning(
                     "Failed to generate review via Gemini, falling back: %s", exc
+                )
+
+        # 2. Agnostic LiteLLM / OpenAI-compatible mode (OpenRouter, vLLM, etc.)
+        elif self.settings.model_provider == ModelProvider.LITELLM and (
+            self.settings.openai_compatible_api_key
+            or self.settings.openai_compatible_api_base
+        ):
+            try:
+                import litellm
+
+                api_key = (
+                    self.settings.openai_compatible_api_key.get_secret_value()
+                    if self.settings.openai_compatible_api_key
+                    else None
+                )
+                prompt = (
+                    f"Review MR #{context.pr_number} in repo '{context.repo}'.\n\n"
+                    f"Allowed files: {list(context.allowed_files)}\n\n"
+                    f"Diff:\n```\n{diff[:30000]}\n```\n\n"
+                    f"{REVIEWER_SYSTEM_INSTRUCTION}"
+                )
+                response = await litellm.acompletion(
+                    model=self.settings.openai_compatible_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    api_key=api_key,
+                    api_base=self.settings.openai_compatible_api_base,
+                    response_format={"type": "json_object"},
+                )
+                content = response.choices[0].message.content
+                if content:
+                    parsed = json.loads(content)
+                    return ReviewResult.model_validate(parsed)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to generate review via LiteLLM, falling back: %s", exc
                 )
 
         # Baseline heuristic review when API key is unset or as fallback
@@ -152,8 +196,11 @@ class ReviewEngine:
                 )
             return response
 
-        # If Google Gemini API key is configured
-        if self.settings.google_api_key:
+        # 1. Native Gemini evaluation
+        if (
+            self.settings.model_provider == ModelProvider.GEMINI
+            and self.settings.google_api_key
+        ):
             try:
                 from google import genai
 
@@ -194,6 +241,52 @@ class ReviewEngine:
             except Exception as exc:
                 logger.warning("Failed to evaluate comment via Gemini: %s", exc)
 
+        # 2. Agnostic LiteLLM / OpenAI-compatible evaluation
+        elif self.settings.model_provider == ModelProvider.LITELLM and (
+            self.settings.openai_compatible_api_key
+            or self.settings.openai_compatible_api_base
+        ):
+            try:
+                import litellm
+
+                api_key = (
+                    self.settings.openai_compatible_api_key.get_secret_value()
+                    if self.settings.openai_compatible_api_key
+                    else None
+                )
+                prior_comments = await self.platform.get_pr_comments(
+                    event.repo, event.pr_number
+                )
+                comments_snippet = "\n".join(
+                    f"- [{c.author}] ({'BOT' if c.is_bot else 'USER'}): {c.body[:200]}"
+                    for c in prior_comments[-5:]
+                )
+                prompt = (
+                    f"A developer commented on PR #{event.pr_number} "
+                    f"in repo '{event.repo}'.\n\n"
+                    f'New Comment by @{event.sender}:\n"{comment_body}"\n\n'
+                    f"Recent Conversation History:\n{comments_snippet}\n\n"
+                    f"{COMMENT_RESPONDER_INSTRUCTION}"
+                )
+                res = await litellm.acompletion(
+                    model=self.settings.openai_compatible_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    api_key=api_key,
+                    api_base=self.settings.openai_compatible_api_base,
+                    response_format={"type": "json_object"},
+                )
+                content = res.choices[0].message.content
+                if content:
+                    parsed = json.loads(content)
+                    decision = CommentResponse.model_validate(parsed)
+                    if decision.should_reply and decision.reply:
+                        await self.platform.post_pr_comment(
+                            event.repo, event.pr_number, decision.reply
+                        )
+                    return decision
+            except Exception as exc:
+                logger.warning("Failed to evaluate comment via LiteLLM: %s", exc)
+
         # Fallback / heuristic response when mentioned without external LLM
         if is_mentioned:
             fallback_reply = (
@@ -220,7 +313,11 @@ class ReviewEngine:
                 repo, pr_number, context, log_content
             )
 
-        if self.settings.google_api_key:
+        # 1. Native Gemini diagnosis
+        if (
+            self.settings.model_provider == ModelProvider.GEMINI
+            and self.settings.google_api_key
+        ):
             try:
                 from google import genai
 
@@ -245,6 +342,38 @@ class ReviewEngine:
                     return ActionDiagnosticResult.model_validate_json(res.text)
             except Exception as exc:
                 logger.warning("Failed to diagnose action via Gemini: %s", exc)
+
+        # 2. Agnostic LiteLLM / OpenAI-compatible diagnosis
+        elif self.settings.model_provider == ModelProvider.LITELLM and (
+            self.settings.openai_compatible_api_key
+            or self.settings.openai_compatible_api_base
+        ):
+            try:
+                import litellm
+
+                api_key = (
+                    self.settings.openai_compatible_api_key.get_secret_value()
+                    if self.settings.openai_compatible_api_key
+                    else None
+                )
+                prompt = (
+                    f"Action '{context}' failed on PR #{pr_number} "
+                    f"in repo '{repo}'.\n\n"
+                    f"Failure Log:\n```\n{log_content}\n```\n\n"
+                    f"{ACTION_DIAGNOSTIC_INSTRUCTION}"
+                )
+                res = await litellm.acompletion(
+                    model=self.settings.openai_compatible_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    api_key=api_key,
+                    api_base=self.settings.openai_compatible_api_base,
+                    response_format={"type": "json_object"},
+                )
+                content = res.choices[0].message.content
+                if content:
+                    return ActionDiagnosticResult.model_validate_json(content)
+            except Exception as exc:
+                logger.warning("Failed to diagnose action via LiteLLM: %s", exc)
 
         return ActionDiagnosticResult(
             context=context,

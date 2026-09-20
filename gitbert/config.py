@@ -33,6 +33,13 @@ class CommentTriggerMode(StrEnum):
     AUTONOMOUS = "autonomous"  # Option B: default, evaluates any comment
 
 
+class ModelProvider(StrEnum):
+    """LLM provider architecture."""
+
+    GEMINI = "gemini"
+    LITELLM = "litellm"
+
+
 def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
     """Parse known CLI arguments for configuration overrides."""
     if args is None:
@@ -54,7 +61,11 @@ def parse_cli_args(args: list[str] | None = None) -> dict[str, Any]:
         default=None,
     )
     parser.add_argument("--bot-name", type=str)
+    parser.add_argument("--model-provider", type=str)
     parser.add_argument("--model-name", type=str)
+    parser.add_argument("--openai-compatible-api-key", type=str)
+    parser.add_argument("--openai-compatible-model", type=str)
+    parser.add_argument("--openai-compatible-api-base", type=str)
     parser.add_argument("--gitea-url", type=str)
     parser.add_argument("--gitea-token", type=str)
     parser.add_argument("--gitea-webhook-secret", type=str)
@@ -135,12 +146,35 @@ class Settings(BaseSettings):
         description="System instruction for the reviewer agent",
     )
 
-    # Model settings
+    # Model provider selection: "gemini" or "litellm"
+    model_provider: ModelProvider = Field(
+        default=ModelProvider.GEMINI,
+        description=(
+            "LLM provider: 'gemini' (native Google GenAI) or 'litellm' "
+            "(agnostic OpenAI-compatible via LiteLLM)"
+        ),
+    )
+
+    # Native Gemini settings
     model_name: str = Field(
-        default="gemini-2.0-flash", description="Underlying LLM model name"
+        default="gemini-2.0-flash", description="Underlying Gemini LLM model name"
     )
     google_api_key: SecretStr | None = Field(
         default=None, description="Google Gemini API Key"
+    )
+
+    # OpenAI-compatible (OpenRouter, vLLM, Ollama, LiteLLM) settings
+    openai_compatible_api_key: SecretStr | None = Field(
+        default=None,
+        description="API key for OpenAI-compatible endpoint (e.g. OpenRouter)",
+    )
+    openai_compatible_model: str = Field(
+        default="openrouter/anthropic/claude-3.5-sonnet",
+        description="Model identifier for LiteLLM / OpenAI-compatible provider",
+    )
+    openai_compatible_api_base: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="Base URL for OpenAI-compatible endpoint",
     )
 
     # Gitea platform settings
@@ -176,10 +210,27 @@ class Settings(BaseSettings):
         combined_values = {**file_values, **values}
         super().__init__(_env_file=_env_file, **combined_values)
 
-    @property
-    def model(self) -> str:
-        """Alias for backward compatibility with ADK agent definitions."""
+    def get_adk_model(self) -> Any:
+        """Return ADK model (str for Gemini, or LiteLlm wrapper for LiteLLM)."""
+        if self.model_provider == ModelProvider.LITELLM:
+            from google.adk.models.lite_llm import LiteLlm
+
+            api_key = (
+                self.openai_compatible_api_key.get_secret_value()
+                if self.openai_compatible_api_key
+                else None
+            )
+            return LiteLlm(
+                model=self.openai_compatible_model,
+                api_key=api_key,
+                api_base=self.openai_compatible_api_base,
+            )
         return self.model_name
+
+    @property
+    def model(self) -> Any:
+        """Alias for backward compatibility with ADK agent definitions."""
+        return self.get_adk_model()
 
     @property
     def agent_name(self) -> str:

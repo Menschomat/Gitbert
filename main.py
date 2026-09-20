@@ -78,16 +78,30 @@ def print_info() -> None:
     wh_status = "[Configured]" if settings.gitea_webhook_secret else "[Unset]"
     key_status = "[Configured]" if settings.google_api_key else "[Unset]"
 
+    active_model = (
+        settings.openai_compatible_model
+        if settings.model_provider == "litellm"
+        else settings.model_name
+    )
+    openai_key_status = (
+        "[Configured]" if settings.openai_compatible_api_key else "[Unset]"
+    )
+
     print("=" * 60)
     print("Gitbert - Multi-Platform PR Review Agent (ADK 2.0)")
     print("=" * 60)
     print(f"Bot Name:          {settings.bot_name}")
     print(f"Review Mode:       {settings.review_mode.value.upper()}")
-    print(f"Model:             {settings.model_name}")
+    print(f"Model Provider:    {settings.model_provider.value.upper()}")
+    print(f"Active Model:      {active_model}")
+    if settings.model_provider == "litellm":
+        print(f"API Base:          {settings.openai_compatible_api_base}")
+        print(f"API Key:           {openai_key_status}")
+    else:
+        print(f"Google API Key:    {key_status}")
     print(f"Gitea URL:         {settings.gitea_url}")
     print(f"Gitea Token:       {token_status}")
     print(f"Webhook Secret:    {wh_status}")
-    print(f"Google API Key:    {key_status}")
     print("=" * 60)
     print("\nAvailable Commands:")
     print("  python main.py server                      # Start webhook listener")
